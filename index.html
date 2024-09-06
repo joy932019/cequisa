@@ -6,10 +6,8 @@
     <style type="text/css">
         html, body {height: 100%; margin: 0; padding: 0;}
         body {
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-            background: rgb(238,238,238);
-            background: linear-gradient(to bottom, rgba(238,238,238,1) 0%,rgba(204,204,204,1) 100%);
+            background-color: #ffffff; /* Fondo blanco */
+            background-image: none; /* Sin degradado */
             height: 100%;
             min-height: 100%;
         }
@@ -34,18 +32,15 @@
             width: 600px;
             margin-left: -260px;
         }
-        #wrapper, #border, #canvas {
+        #wrapper, #border, #canvas, #MMFCanvas {
             padding: 0;
             margin: 0;
             border: none;
+            box-shadow: none; /* Sin sombra */
         }
         #canvas {
             width: 1920px;
             height: 1080px;
-        }
-        #MMFCanvas {
-            -webkit-box-shadow: none;
-            box-shadow: none;
         }
     </style>
     <title>Clickteam Fusion Developer 2.5+ HTML5 Runtime</title>
