@@ -45017,7 +45017,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 	    createList: function (file) {
 
-	        var extMaxHandle = 0;
+	        var extMaxHandle = 2;
 	        if (extMaxHandle) {
 	            this.extensions = new Array(extMaxHandle);
 	            this.numOfConditions = new Array(extMaxHandle);
@@ -45029,6 +45029,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 	            var e;
 	            // START_ADDEXT
+	            e = new CExtLoad();
+	            e.handle = 0;
+	            this.addExt(e);
+	            e = new CExtLoad();
+	            e.handle = 1;
+	            this.addExt(e);
 	            // INCLUDE_ADDEXT
 	        }
 	    },
@@ -45081,6 +45087,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 	        switch (this.handle) {
 	            // START_NEWEXT
+	        case 0:
+	        return new CRunHTML5();
+	        case 1:
+	        return new CRunKcCursor();
 	            // INCLUDE_NEWEXT
 	        }
 
@@ -49929,6 +49939,510 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 
 
+	//----------------------------------------------------------------------------------
+	//
+	// CRUNHTML5
+	//
+	//----------------------------------------------------------------------------------
+	/* Copyright (c) 1996-2012 Clickteam
+	 *
+	 * This source code is part of the HTML5 exporter for Clickteam Multimedia Fusion 2.
+	 *
+	 * Permission is hereby granted to any person obtaining a legal copy
+	 * of Clickteam Multimedia Fusion 2 to use or modify this source code for
+	 * debugging, optimizing, or customizing applications created with
+	 * Clickteam Multimedia Fusion 2.
+	 * Any other use of this source code is prohibited.
+	 *
+	 * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	 * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	 * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	 * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	 * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+	 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+	 * IN THE SOFTWARE.
+	 */
+	CRunHTML5.CND_JSCRIPT_ONERROR = 0;
+	CRunHTML5.CND_ISPRELOADER = 1;
+	CRunHTML5.CND_MOUSEIN = 2;
+	CRunHTML5.CND_ISIE = 3;
+	CRunHTML5.CND_ISCHROME = 4;
+	CRunHTML5.CND_ISFIREFOX = 5;
+	CRunHTML5.CND_ISSAFARI = 6;
+	CRunHTML5.CND_ISOPERA = 7;
+	CRunHTML5.CND_ISEDGE = 8;
+	CRunHTML5.CND_LAST = 9;
+	CRunHTML5.ACT_OPENURL_SELF = 0;
+	CRunHTML5.ACT_OPENURL_PARENT = 1;
+	CRunHTML5.ACT_OPENURL_TOP = 2;
+	CRunHTML5.ACT_OPENURL_NEW = 3;
+	CRunHTML5.ACT_OPENURL_TARGET = 4;
+	CRunHTML5.ACT_JSCRIPT_RESETPARAMS = 5;
+	CRunHTML5.ACT_JSCRIPT_ADDINTPARAM = 6;
+	CRunHTML5.ACT_JSCRIPT_ADDFLOATPARAM = 7;
+	CRunHTML5.ACT_JSCRIPT_ADDSTRPARAM = 8;
+	CRunHTML5.ACT_JSCRIPT_CALLFUNCTION = 9;
+	CRunHTML5.ACT_SAVECOOKIE = 10;
+	CRunHTML5.EXP_JSCRIPT_GETINTRESULT = 0;
+	CRunHTML5.EXP_JSCRIPT_GETFLOATRESULT = 1;
+	CRunHTML5.EXP_JSCRIPT_GETSTRRESULT = 2;
+	CRunHTML5.EXP_TOTAL = 3;
+	CRunHTML5.EXP_LOADED = 4;
+	CRunHTML5.EXP_PERCENT = 5;
+	CRunHTML5.EXP_BROWSERNAME = 6;
+	CRunHTML5.EXP_BROWSERVERSION = 7;
+	CRunHTML5.EXP_BROWSEROS = 8;
+	CRunHTML5.EXP_GETCOOKIE = 9;
+	CRunHTML5.EXP_GETURL = 10;
+	CRunHTML5.EXP_GETHOST = 11;
+	CRunHTML5.EXP_GETHOSTNAME = 12;
+	CRunHTML5.EXP_GETHASH = 13;
+	CRunHTML5.EXP_GETSEARCH = 14;
+
+	function CRunHTML5()
+	{
+		this.parameters = null;
+		this.ret = 0;
+		this.bError = false;
+	}
+
+	CRunHTML5.prototype = CServices.extend(new CRunExtension(),
+		{
+			getNumberOfConditions: function ()
+			{
+				return CRunHTML5.CND_LAST;
+			},
+
+			createRunObject: function (file, cob, version)
+			{
+				this.parameters = new Array();
+				return true;
+			},
+
+			condition: function (num, cnd)
+			{
+				switch (num)
+				{
+					case CRunHTML5.CND_JSCRIPT_ONERROR:
+						return this.onError();
+					case CRunHTML5.CND_ISPRELOADER:
+						return this.isPreloader();
+					case CRunHTML5.CND_MOUSEIN:
+						return this.ho.hoAdRunHeader.rhApp.bMouseIn;
+					case CRunHTML5.CND_ISIE:
+						return this.rh.rhApp.browserDetect.browser == "Explorer";
+					case CRunHTML5.CND_ISCHROME:
+						return this.rh.rhApp.browserDetect.browser == "Chrome";
+					case CRunHTML5.CND_ISFIREFOX:
+						return this.rh.rhApp.browserDetect.browser == "Firefox";
+					case CRunHTML5.CND_ISSAFARI:
+						return this.rh.rhApp.browserDetect.browser == "Safari";
+					case CRunHTML5.CND_ISOPERA:
+					    return this.rh.rhApp.browserDetect.browser == "Opera";
+				    case CRunHTML5.CND_ISEDGE:
+				        return this.rh.rhApp.browserDetect.browser == "Edge";
+	            }
+				return false;
+			},
+
+			isPreloader: function ()
+			{
+			    return this.ho.hoAdRunHeader.rhApp.isPreloaderSubApp;
+			},
+			onError:     function ()
+			{
+				if ((this.ho.hoFlags & CObject.HOF_TRUEEVENT) != 0)
+					return true;
+				if (this.rh.rh4EventCount == this.onErrorCount)
+					return true;
+				return false;
+			},
+
+			action:           function (num, act)
+			{
+				switch (num)
+				{
+					case CRunHTML5.ACT_OPENURL_SELF:
+						this.actOpenURLSelf(act);
+						break;
+					case CRunHTML5.ACT_OPENURL_PARENT:
+						this.actOpenURLParent(act);
+						break;
+					case CRunHTML5.ACT_OPENURL_TOP:
+						this.actOpenURLTop(act);
+						break;
+					case CRunHTML5.ACT_OPENURL_NEW:
+						this.actOpenURLNew(act);
+						break;
+					case CRunHTML5.ACT_OPENURL_TARGET:
+						this.actOpenURLTarget(act);
+						break;
+					case CRunHTML5.ACT_JSCRIPT_RESETPARAMS:
+						this.actResetParams();
+						break;
+					case CRunHTML5.ACT_JSCRIPT_ADDINTPARAM:
+						this.actAddIntegerParam(act);
+						break;
+					case CRunHTML5.ACT_JSCRIPT_ADDFLOATPARAM:
+						this.actAddFloatParam(act);
+						break;
+					case CRunHTML5.ACT_JSCRIPT_ADDSTRPARAM:
+						this.actAddStringParam(act);
+						break;
+					case CRunHTML5.ACT_JSCRIPT_CALLFUNCTION:
+						this.actCallFunction(act);
+						break;
+					case CRunHTML5.ACT_SAVECOOKIE:
+						this.actSaveCookie(act);
+						break;
+				}
+			},
+			actSaveCookie:    function (act)
+			{
+				var cookieName = act.getParamExpString(this.rh, 0);
+				var days = act.getParamExpression(this.rh, 1);
+				var content = act.getParamExpString(this.rh, 2);
+
+				var expires = new Date();
+				if (days <= 0)
+					days = 10000;
+				expires.setTime(expires.getTime() + (1000 * 60 * 60 * 24 * days));
+				var cookie = cookieName + "=" + escape(content) + "; path=/; expires=" + expires.toGMTString();
+				document.cookie = cookie;
+			},
+			actOpenURLSelf:   function (act)
+			{
+				var url = act.getParamExpString(this.rh, 0);
+				window.open(url, "_self");
+			},
+			actOpenURLParent: function (act)
+			{
+				var url = act.getParamExpString(this.rh, 0);
+				window.open(url, "_parent");
+			},
+			pactOpenURLTop:   function (act)
+			{
+				var url = act.getParamExpString(this.rh, 0);
+				window.open(url, "_top");
+			},
+			actOpenURLNew:    function (act)
+			{
+				var url = act.getParamExpString(this.rh, 0);
+				window.open(url, "_blank");
+			},
+			actOpenURLTarget: function (act)
+			{
+				var url = act.getParamExpString(this.rh, 0);
+				var target = act.getParamExpString(this.rh, 1);
+				window.open(url, target);
+			},
+
+			actResetParams:     function ()
+			{
+				this.parameters = null;
+			},
+			actAddIntegerParam: function (act)
+			{
+				if (this.parameters == null)
+					this.parameters = new Array();
+				var p = act.getParamExpression(this.rh, 0);
+				this.parameters.push(p);
+			},
+			actAddStringParam:  function (act)
+			{
+				if (this.parameters == null)
+					this.parameters = new Array();
+				var p = act.getParamExpString(this.rh, 0);
+				this.parameters.push(p);
+			},
+			actAddFloatParam:   function (act)
+			{
+				if (this.parameters == null)
+					this.parameters = new Array();
+				var p = act.getParamExpDouble(this.rh, 0);
+				this.parameters.push(p);
+			},
+			actCallFunction:    function (act)
+			{
+				if (this.parameters == null)
+					this.parameters = new Array();
+
+				var func = act.getParamExpString(this.rh, 0);
+				this.bError = false;
+				try
+				{
+					this.ret = window[func](this.parameters[0], this.parameters[1], this.parameters[2], this.parameters[3], this.parameters[4],
+						this.parameters[5], this.parameters[6], this.parameters[7], this.parameters[8], this.parameters[9], this.parameters[10]);
+				}
+				catch (e)
+				{
+					this.bError = true;
+					this.onErrorCount = this.ho.getEventCount();
+					this.ho.generateEvent(CRunHTML5.CND_JSCRIPT_ONERROR, 0);
+				}
+				this.parameters = null;
+			},
+
+			expression:         function (num)
+			{
+				switch (num)
+				{
+					case CRunHTML5.EXP_JSCRIPT_GETINTRESULT:
+						return this.expGetIntResult();
+					case CRunHTML5.EXP_JSCRIPT_GETFLOATRESULT:
+						return this.expGetNumberResult();
+					case CRunHTML5.EXP_JSCRIPT_GETSTRRESULT:
+						return this.expGetStringResult();
+					case CRunHTML5.EXP_TOTAL:
+						return this.expTotal();
+					case CRunHTML5.EXP_LOADED:
+						return this.expLoaded();
+					case CRunHTML5.EXP_PERCENT:
+						return this.expPercent();
+					case CRunHTML5.EXP_BROWSERNAME:
+						return this.rh.rhApp.browserDetect.browser;
+					case CRunHTML5.EXP_BROWSERVERSION:
+						return this.rh.rhApp.browserDetect.version;
+					case CRunHTML5.EXP_BROWSEROS:
+						return this.rh.rhApp.browserDetect.OS;
+					case CRunHTML5.EXP_GETCOOKIE:
+						return this.expGetCookie();
+					case CRunHTML5.EXP_GETURL:
+						return window.location.href;
+					case CRunHTML5.EXP_GETHOST:
+						return window.location.host;
+					case CRunHTML5.EXP_GETHOSTNAME:
+						return window.location.hostname;
+					case CRunHTML5.EXP_GETHASH:
+						return window.location.hash;
+					case CRunHTML5.EXP_GETSEARCH:
+						return window.location.search;
+				}
+				return 0;
+			},
+			getCookie:          function (name)
+			{
+				var dc = document.cookie;
+				var cname = name + "=";
+
+				if (dc.length > 0)
+				{
+					var begin = dc.indexOf(cname);
+					if (begin != -1)
+					{
+						begin += cname.length;
+						end = dc.indexOf(";", begin);
+						if (end == -1)
+							end = dc.length;
+						return unescape(dc.substring(begin, end));
+					}
+				}
+				return null;
+			},
+			expGetCookie:       function ()
+			{
+				var cookieName = this.ho.getExpParam();
+				var cookie = this.getCookie(cookieName);
+				if (!cookie)
+					cookie = "";
+				return cookie;
+			},
+			expTotal:           function ()
+			{
+				if (this.rh.rhApp.parentApp != null)
+					return this.rh.rhApp.parentApp.imagesToLoad;
+				return 0;
+			},
+			expLoaded:          function ()
+			{
+				if (this.rh.rhApp.parentApp != null)
+					return this.rh.rhApp.parentApp.imagesLoaded;
+				return 0;
+			},
+			expPercent:         function ()
+			{
+				if (this.rh.rhApp.parentApp != null)
+				{
+					if (this.rh.rhApp.parentApp.imagesToLoad != 0)
+					{
+						return (this.rh.rhApp.parentApp.imagesLoaded * 100) / this.rh.rhApp.parentApp.imagesToLoad;
+					}
+				}
+				return 0;
+			},
+			expGetStringResult: function ()
+			{
+				if (typeof this.ret == "string")
+					return this.ret;
+				return "";
+			},
+			expGetNumberResult: function ()
+			{
+				if (typeof this.ret == "number")
+					return this.ret;
+				return "";
+			},
+			expGetIntResult:    function ()
+			{
+				if (typeof this.ret == "number")
+					return CServices.floatToInt(this.ret);
+				return "";
+			}
+		});
+
+
+
+	//----------------------------------------------------------------------------------
+	//
+	// CRUNKCCURSOR - Implementation of the Fusion Cursor object
+	//
+	//----------------------------------------------------------------------------------
+	/* Copyright (c) 1996-2012 Clickteam
+	 *
+	 * This source code is part of the HTML5 exporter for Clickteam Multimedia Fusion 2.
+	 *
+	 * Permission is hereby granted to any person obtaining a legal copy
+	 * of Clickteam Multimedia Fusion 2 to use or modify this source code for
+	 * debugging, optimizing, or customizing applications created with
+	 * Clickteam Multimedia Fusion 2.
+	 * Any other use of this source code is prohibited.
+	 *
+	 * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	 * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	 * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	 * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	 * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+	 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+	 * IN THE SOFTWARE.
+	 */
+	CRunKcCursor.CND_LAST = 0;
+	CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING = 0;	// Standard arrow and small hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW = 1;	// Standard arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS = 2;	// Crosshair
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM = 3;	// Text I-beam
+	CRunKcCursor.ACT_ACTION_SETSHAPE_NO = 4;	// Slashed circle
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL = 5;	// Windows NT only: Four-pointed arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW = 6;	// Double-pointed arrow pointing northeast and southwest
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS = 7;	// Double-pointed arrow pointing north and south
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE = 8;	// Double-pointed arrow pointing northwest and southeast
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE = 9;	// Double-pointed arrow pointing west and east
+	CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW = 10;	// Vertical arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT = 11;	// Hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HELP = 12;	// Hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER = 13;	// Custom image (by number)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME = 14; // Custom image (by name)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HAND = 15;	// Hand
+	CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM = 16;	// Magnifying Glass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_PICK = 17;	// Color Picker
+	CRunKcCursor.ACT_ACTION_SETSHAPE_FILL = 18;	// Fill
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT = 19;	// Horizontal Split
+	CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT = 20;	// Vertical Split
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY = 21;	// Drag (Copy)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE = 22;	// Drag (Move)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT = 23;	// Drag (Shortcut)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT = 24;	// Track active object
+	CRunKcCursor.EXP_LAST = 0;
+
+	function CRunKcCursor()
+	{
+		this.cursor = 'auto';
+	}
+
+	CRunKcCursor.prototype = CServices.extend(new CRunExtension(),
+		{
+			getNumberOfConditions: function ()
+			{
+				return CRunKcCursor.CND_LAST;
+			},
+
+			createRunObject: function (file, cob, version)
+			{
+				this.cursor = 'auto';
+				this.rh.rhApp.cursor = this.cursor;
+				return true;
+			},
+
+			action: function (num, act)
+			{
+				switch (num)
+				{
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING:
+						this.cursor = 'alias';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS:
+						this.cursor = 'crosshair';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM:
+						this.cursor = 'text';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_NO:
+						this.cursor = 'not-allowed';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL:
+						this.cursor = 'all-scroll';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW:
+						this.cursor = 'nesw-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS:
+						this.cursor = 'ns-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE:
+						this.cursor = 'nwse-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE:
+						this.cursor = 'ew-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW:
+						this.cursor = 'pointer';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT:
+						this.cursor = 'wait';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HELP:
+						this.cursor = 'help';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER:
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME:
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HAND:
+					    this.cursor = 'pointer';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM:
+						this.cursor = 'zoom-in';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_PICK:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_FILL:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT:
+						this.cursor = 'col-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT:
+						this.cursor = 'row_resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY:
+						this.cursor = 'copy';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE:
+						this.cursor = 'move';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT:
+						this.cursor = 'context-menu';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT:
+						break;
+				}
+				this.rh.rhApp.cursor = this.cursor;
+				this.rh.showMouse();
+			}
+		});
 
 	Runtime(__can, __path); 
 })
