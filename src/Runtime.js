@@ -1003,7 +1003,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var total = b4 * 0x01000000 + b3 * 0x00010000 + b2 * 0x00000100 + b1;
 			if (total > 0x80000000)
 			{
-				total -= 0xFFFFFFFF;
+				total -= 0x100000000;
 			}
 			return total / 65536.0;
 		},
@@ -1775,7 +1775,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.strings.removeIndex(s);
 				while (true)
 				{
-					s++;
+					//s++;
 					if (s >= this.strings.size())
 					{
 						break;
@@ -2042,11 +2042,16 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 	    // Edge 20+
 	    this.isEdge = !this.isIE && !!window['StyleMedia'];
-
+	    
 	    // Chrome 1+
-	    this.isChrome = !!window.chrome && !!window.chrome.webstore;
+	    this.isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
 
-	    if (this.isChrome)
+		// Edge (based on chromium) detection
+		this.isEdgeChromium = this.isChrome && (navigator.userAgent.indexOf("Edg") != -1);
+		
+	    if (this.isEdgeChromium)
+		    this.browser = "Edge";
+		else if (this.isChrome)
 	        this.browser = "Chrome";
 	    else if (this.isEdge)
 	        this.browser = "Edge";
@@ -2542,6 +2547,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			while (i < CurrentQualToOi.qoiList.length)
 			{
 				var CurrentOi = CurrentQualToOi.qoiList[i + 1];
+	            if (CurrentOi < 0)
+	                break;
 				hasSelected = (((hasSelected ? 1 : 0) |
 					(this.filterNonQualifierObjects(rdPtr, CurrentOi, negate, filter) ? 1 : 0))) != 0;
 
@@ -2621,7 +2628,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				var i = 0;
 				while (i < CurrentQualToOi.qoiList.length)
 				{
-					var CurrentOi = this.OiList[CurrentQualToOi.qoiList[i + 1]];
+	                var noil = CurrentQualToOi.qoiList[i + 1];
+	                if (noil < 0)
+	                    break;
+	                var CurrentOi = this.OiList[noil];
 					numberSelected += CurrentOi.oilNumOfSelected;
 					i += 2;
 				}
@@ -2644,7 +2654,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				var i = 0;
 				while (i < CurrentQualToOi.qoiList.length)
 				{
-					var CurrentOi = this.OiList[CurrentQualToOi.qoiList[i + 1]];
+	                var noil = CurrentQualToOi.qoiList[i + 1];
+	                if (noil < 0)
+	                    break;
+	                var CurrentOi = this.OiList[noil];
 					if (CurrentOi.oilOi == obj.hoOi)
 						return true;
 					i += 2;
@@ -2783,6 +2796,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 	    var bExtSetFlag = false;
 	    var bExtClrFlag = false;
 	    var bExtChgFlag = false;
+	    var bExtra = false;
 
 	    var debut = app.file.getFilePointer();
 
@@ -2956,6 +2970,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case ((33 << 16) | 0xFFFE):
 				act = new ACT_SETSAMPLEFREQ();
 				break;
+	        case ((36 << 16) | 0xFFFE):
+	            act = new ACT_PLAYSAMPLE2();
+	            break;
 			case ((0 << 16) | 0xFFFD):
 				act = new ACT_NEXTLEVEL();
 				break;
@@ -3097,12 +3114,18 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case ((10 << 16) | 0xFFF9):
 				act = new ACT_SETPLAYERNAME();
 				break;
-			case ((0 << 16) | 0xFFFB):
-				act = new ACT_CREATE();
-				break;
-			case ((1 << 16) | 0xFFFB):
-				act = new ACT_CREATEBYNAME();
-				break;
+	        case ((0 << 16) | 0xFFFB):
+	            act = new ACT_CREATE();
+	            break;
+	        case ((1 << 16) | 0xFFFB):
+	            act = new ACT_CREATEBYNAME();
+	            break;
+	        case ((2 << 16) | 0xFFFB):
+	            act = new ACT_CREATEEXP();
+	            break;
+	        case ((3 << 16) | 0xFFFB):
+	            act = new ACT_CREATEBYNAMEEXP();
+	            break;
 			case (((80 + 0) << 16) | 3):
 				act = new ACT_STRDESTROY();
 				break;
@@ -3229,7 +3252,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				switch (c & 0xFFFF0000)
 				{
-					case (1 << 16):
+				    case 0:
+				        act = new ACT_EXTEXTRA();
+				        bExtra = true;
+				        break;
+				    case (1 << 16):
 						act = new ACT_EXTSETPOS();
 						break;
 					case (2 << 16):
@@ -3489,6 +3516,17 @@ window['Runtime'] = (function Runtime(__can, __path){
 			act.evtNParams = app.file.readAByte();
 			act.evtDefType = app.file.readAByte();
 
+	        // Extra common action? read subaction number and skip parameter
+			var subaction = 0;
+			if (bExtra) {
+			    act.evtNParams--;
+			    var paramstart = app.file.getFilePointer();
+			    var paramsize = app.file.readAShort();
+			    var paramcode = app.file.readAShort();      // PARAM_SUBACTION
+			    subaction = app.file.readAShort();
+			    app.file.seek(paramstart + paramsize);
+			}
+
 			if (act.evtNParams > 0)
 			{
 				act.evtParams = new Array(act.evtNParams);
@@ -3497,6 +3535,28 @@ window['Runtime'] = (function Runtime(__can, __path){
 				{
 					act.evtParams[n] = CParam.create(app);
 				}
+			}
+
+			if (subaction != 0) {
+			    var newAct = null;
+			    switch (subaction) {
+	            // Set flag by expression
+			        case 1:
+			            newAct = new ACT_EXTSETFLAGBYEXP;
+			            break;
+			    }
+			    if (newAct != null) {
+			        newAct.evtCode = act.evtCode;
+			        newAct.evtOi = act.evtOi;
+			        newAct.evtOiList = act.evtOiList;
+			        newAct.evtFlags = act.evtFlags;
+			        newAct.evtFlags2 = act.evtFlags2;
+			        newAct.evtNParams = act.evtNParams;
+			        newAct.evtDefType = act.evtDefType;
+			        newAct.evtParams = act.evtParams;
+
+			        act = newAct;
+			    }
 			}
 
 			// Optimization of operations on global values for constant values
@@ -3998,54 +4058,75 @@ window['Runtime'] = (function Runtime(__can, __path){
 	ACT_STARTLOOP.prototype =
 	{
 		execute: function (rhPtr)
-		{
+	    {
+	        var gotNameExp = false;
 			var name;
 			var number;
 
 			// Accelerated handling
-			if (rhPtr.rhEvtProg.complexOnLoop == false && this.evtParams[0].fastFastLoop)
-			{
-				var infoLoop = rhPtr.rh4PosOnLoop[this.evtParams[0].fastFastLoop - 1];
-				if (infoLoop.m_bOR == false)
-				{
-					//name = infoLoop.name;
-					number = Math.floor(rhPtr.get_EventExpressionInt(this.evtParams[1]));
+			if (rhPtr.rhEvtProg.complexOnLoop == false && rhPtr.rh4PosOnLoop != null)
+	        {
+	            var loopNumber = this.evtParams[0].fastFastLoop;
+	            if (loopNumber == 0)
+	            {
+	                name = rhPtr.get_EventExpressionString(this.evtParams[0]);
+	                gotNameExp = true;
+	                if (name.length != 0)
+	                {
+	                    var nOnLoop;
+	                    for (nOnLoop = 0; nOnLoop < rhPtr.rh4PosOnLoop.length; nOnLoop++)
+	                    {
+	                        if (CServices.compareStringsIgnoreCase(name, rhPtr.rh4PosOnLoop[nOnLoop].name))
+	                            { loopNumber = nOnLoop + 1; break; }
+	                    }
+	                }
+	            }
 
-					var pLoop = rhPtr.rh4FastLoops.get(infoLoop.fastLoopIndex);
-					pLoop.flags &= ~CLoop.FLFLAG_STOP;
+	            if (loopNumber != 0)
+	            {
+	                var infoLoop = rhPtr.rh4PosOnLoop[loopNumber - 1];
+				    if (infoLoop.m_bOR == false)
+				    {
+					    //name = infoLoop.name;
+					    number = Math.floor(rhPtr.get_EventExpressionInt(this.evtParams[1]));
 
-					var bInfinite = false;
-					if (number < 0)
-					{
-						bInfinite = true;
-						number = 10;
-					}
-					var save = rhPtr.rh4CurrentFastLoop;
-					var actionLoop = rhPtr.rhEvtProg.rh2ActionLoop;
-					var actionLoopCount = rhPtr.rhEvtProg.rh2ActionLoopCount;
-					var eventGroup = rhPtr.rhEvtProg.rhEventGroup;
-					for (pLoop.index = 0; pLoop.index < number; pLoop.index++)
-					{
-						rhPtr.rh4CurrentFastLoop = pLoop.name;
-						rhPtr.rhEvtProg.rh2ActionOn = false;
-						rhPtr.rhEvtProg.computeEventFastLoopList(infoLoop.pointers);
-						if ((pLoop.flags & CLoop.FLFLAG_STOP) != 0)
-							break;
-						if (bInfinite)
-							number = pLoop.index + 10;
-					}
-					rhPtr.rhEvtProg.rh2ActionLoopCount = actionLoopCount;
-					rhPtr.rhEvtProg.rh2ActionLoop = actionLoop;
-					rhPtr.rh4CurrentFastLoop = save;
-					rhPtr.rhEvtProg.rh2ActionOn = true;
+					    var pLoop = rhPtr.rh4FastLoops.get(infoLoop.fastLoopIndex);
+					    pLoop.flags &= ~CLoop.FLFLAG_STOP;
 
-	//				rhPtr.rh4FastLoops.removeIndex(index);
-					return;
-				}
+					    var bInfinite = false;
+					    if (number < 0)
+					    {
+						    bInfinite = true;
+						    number = 10;
+					    }
+					    var save = rhPtr.rh4CurrentFastLoop;
+					    var actionLoop = rhPtr.rhEvtProg.rh2ActionLoop;
+					    var actionLoopCount = rhPtr.rhEvtProg.rh2ActionLoopCount;
+					    var eventGroup = rhPtr.rhEvtProg.rhEventGroup;
+					    for (pLoop.index = 0; pLoop.index < number; pLoop.index++)
+					    {
+						    rhPtr.rh4CurrentFastLoop = pLoop.name;
+						    rhPtr.rhEvtProg.rh2ActionOn = false;
+						    rhPtr.rhEvtProg.computeEventFastLoopList(infoLoop.pointers);
+						    if ((pLoop.flags & CLoop.FLFLAG_STOP) != 0)
+							    break;
+						    if (bInfinite)
+							    number = pLoop.index + 10;
+					    }
+					    rhPtr.rhEvtProg.rh2ActionLoopCount = actionLoopCount;
+					    rhPtr.rhEvtProg.rh2ActionLoop = actionLoop;
+					    rhPtr.rh4CurrentFastLoop = save;
+					    rhPtr.rhEvtProg.rh2ActionOn = true;
+
+	    //				rhPtr.rh4FastLoops.removeIndex(index);
+					    return;
+	                }
+	            }
 			}
 
 			// Normal handling
-			name = rhPtr.get_EventExpressionString(this.evtParams[0]);
+	        if ( !gotNameExp )
+	            name = rhPtr.get_EventExpressionString(this.evtParams[0]);
 			if (name.length == 0)
 				return;
 			number = Math.floor(rhPtr.get_EventExpressionInt(this.evtParams[1]));
@@ -4209,7 +4290,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			    nSound = p.sndHandle;
 			}
 			if (nSound >= 0)
-			    rhPtr.rhApp.soundPlayer.play(nSound, 1, channel - 1, bPrio);
+			    rhPtr.rhApp.soundPlayer.play(nSound, 1, channel - 1, bPrio, -1, 0);
 		}
 	}
 	// CUT
@@ -4236,7 +4317,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var channel = rhPtr.get_EventExpressionInt(this.evtParams[1]);
 			var nLoops = rhPtr.get_EventExpressionInt(this.evtParams[2]);
 			if (nSound >= 0)
-			    rhPtr.rhApp.soundPlayer.play(nSound, nLoops, channel - 1, bPrio);
+	            rhPtr.rhApp.soundPlayer.play(nSound, nLoops, channel - 1, bPrio, -1, 0);
 		}
 	}
 	// CUT
@@ -4262,7 +4343,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			    nSound = p.sndHandle;
 			}
 			if (nSound >= 0)
-			    rhPtr.rhApp.soundPlayer.play(nSound, nLoops, -1, bPrio);
+	            rhPtr.rhApp.soundPlayer.play(nSound, nLoops, -1, bPrio, -1, 0);
 		}
 	}
 	// CUT
@@ -4286,10 +4367,41 @@ window['Runtime'] = (function Runtime(__can, __path){
 		        bPrio = (p.sndFlags & PARAM_SAMPLE.PSOUNDFLAG_UNINTERRUPTABLE) != 0;
 		        nSound = p.sndHandle;
 		    }
-		    if ( nSound >= 0 )
-		        rhPtr.rhApp.soundPlayer.play(nSound, 1, -1, bPrio);
+	        if (nSound >= 0)
+	            rhPtr.rhApp.soundPlayer.play(nSound, 1, -1, bPrio, -1, 0);
 		}
 	}
+	// CUT
+
+	function ACT_PLAYSAMPLE2() {
+	}
+	ACT_PLAYSAMPLE2.prototype =
+	    {
+	        execute: function (rhPtr) {
+	            var p = this.evtParams[0];
+	            var bPrio = false;
+	            var nSound = -1;
+	            // PARAM_EXPSTRING?
+	            if (p.code == 45) {
+	                var name = rhPtr.get_EventExpressionString(p);
+	                nSound = rhPtr.rhApp.soundBank.getSoundHandleFromName(name);
+	            }
+	            else {
+	                bPrio = (p.sndFlags & PARAM_SAMPLE.PSOUNDFLAG_UNINTERRUPTABLE) != 0;
+	                nSound = p.sndHandle;
+	            }
+	            if (nSound >= 0) {
+
+	                // Get all params
+	                var channel = rhPtr.get_EventExpressionInt(this.evtParams[1]);
+	                var nLoops = rhPtr.get_EventExpressionInt(this.evtParams[2]);
+	                var nVolume = rhPtr.get_EventExpressionInt(this.evtParams[3]);
+	                //var pan = rhPtr.get_EventExpressionInt(this.evtParams[4]);  // not modifiable in this runtime
+	                var freq = rhPtr.get_EventExpressionInt(this.evtParams[5]);
+	                rhPtr.rhApp.soundPlayer.play(nSound, nLoops, channel - 1, bPrio, nVolume, freq);
+	            }
+	        }
+	    }
 	// CUT
 
 	function ACT_RESUMEALLCHANNELS()
@@ -5995,8 +6107,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				var qoil = rhPtr.rhEvtProg.qualToOiList[this.evtOiList & 0x7FFF];
 				var qoi;
-				for (qoi = 0; qoi < qoil.qoiList.length; qoi += 2)
-					this.qstCreate(rhPtr, qoil.qoiList[qoi]);
+	            for (qoi = 0; qoi < qoil.qoiList.length; qoi += 2) {
+	                if (qoil.qoiList[qoi] < 0)
+	                    break;
+	                this.qstCreate(rhPtr, qoil.qoiList[qoi]);
+	            }
 			}
 		},
 		qstCreate: function (rhPtr, oi)
@@ -6085,6 +6200,45 @@ window['Runtime'] = (function Runtime(__can, __path){
 	}
 	// CUT
 
+	function ACT_CREATEEXP()
+	{
+	}
+	ACT_CREATEEXP.prototype =
+	{
+		execute: function (rhPtr)
+	    {
+	        var oi = this.evtParams[0].oi;
+	        var x = rhPtr.get_EventExpressionInt(this.evtParams[1]);
+	        var y = rhPtr.get_EventExpressionInt(this.evtParams[2]);
+	        var layer = rhPtr.get_EventExpressionInt(this.evtParams[3]) - 1;
+	        if (oi < 0)
+	            return;
+
+	        var number = rhPtr.f_CreateObject(-1, oi, x, y, -1, 0, layer, -1);
+			if (number >= 0)
+			{
+				var pHo = rhPtr.rhObjectList[number];
+				rhPtr.rhEvtProg.evt_AddCurrentObject(pHo);
+
+				// Build 283.2: add physics attractor
+				if (pHo && pHo.hoType >= 32)
+					rhPtr.addPhysicsAttractor(pHo);
+
+				var mBase = rhPtr.GetMBase(pHo);
+				if (mBase)
+					mBase.CreateBody();
+				else
+				{
+					if (rhPtr.rhBox2DBase != null)
+					{
+						rhPtr.rh4Box2DBase.rAddNormalObject(pHo);
+					}
+				}
+			}
+		}
+	}
+	// CUT
+
 	function ACT_CREATEBYNAME()
 	{
 	}
@@ -6137,6 +6291,48 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 		}
 	}
+	// CUT
+
+	function ACT_CREATEBYNAMEEXP() {
+	}
+	ACT_CREATEBYNAMEEXP.prototype =
+	    {
+	        execute: function (rhPtr) {
+	            var pName = rhPtr.get_EventExpressionString(this.evtParams[0]);
+	            var x = rhPtr.get_EventExpressionInt(this.evtParams[1]);
+	            var y = rhPtr.get_EventExpressionInt(this.evtParams[2]);
+	            var layer = rhPtr.get_EventExpressionInt(this.evtParams[3]) - 1;
+
+	            var oiPtr;
+	            for (oiPtr = rhPtr.rhApp.OIList.getFirstOI(); oiPtr != null; oiPtr = rhPtr.rhApp.OIList.getNextOI()) {
+	                if (oiPtr.oiType >= 2) {
+	                    if (CServices.compareStringsIgnoreCase(oiPtr.oiName, pName))
+	                        break;
+	                }
+	            }
+
+	            if (oiPtr != null) {
+	                var number = rhPtr.f_CreateObject(-1, oiPtr.oiHandle, x, y, -1, 0, layer, -1);
+	                if (number >= 0) {
+	                    var pHo = rhPtr.rhObjectList[number];
+	                    rhPtr.rhEvtProg.evt_AddCurrentObject(pHo);
+
+	                    // Build 283.2: add physics attractor
+	                    if (pHo && pHo.hoType >= 32)
+	                        rhPtr.addPhysicsAttractor(pHo);
+
+	                    var mBase = rhPtr.GetMBase(pHo);
+	                    if (mBase)
+	                        mBase.CreateBody();
+	                    else {
+	                        if (rhPtr.rhBox2DBase != null) {
+	                            rhPtr.rh4Box2DBase.rAddNormalObject(pHo);
+	                        }
+	                    }
+	                }
+	            }
+	        }
+	    }
 	// CUT
 
 	// Common object actions
@@ -7063,6 +7259,37 @@ window['Runtime'] = (function Runtime(__can, __path){
 				pHo.rov.rvValueFlags |= this.mask;
 			}
 		}
+	}
+	// CUT
+
+	function ACT_EXTEXTRA() {
+	}
+	ACT_EXTEXTRA.prototype =
+	{
+	    execute: function (rhPtr) {
+	        var pHo = rhPtr.rhEvtProg.get_ActionObjects(this);
+	        if (pHo == null)
+	            return;
+	        // Should be never called
+	    }
+	}
+
+	function ACT_EXTSETFLAGBYEXP() {
+	}
+	ACT_EXTSETFLAGBYEXP.prototype =
+	{
+	    execute: function (rhPtr) {
+	        var pHo = rhPtr.rhEvtProg.get_ActionObjects(this);
+	        if (pHo == null)
+	            return;
+	        if (pHo.rov != null) {
+	            var number = rhPtr.get_EventExpressionInt(this.evtParams[0]);       // flag number
+	            var value = rhPtr.get_EventExpressionInt(this.evtParams[1]);        // value
+	            pHo.rov.rvValueFlags &= ~(1 << number);
+	            if ( value )
+	                pHo.rov.rvValueFlags |= (1 << number);
+	        }
+	    }
 	}
 	// CUT
 
@@ -8136,10 +8363,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				cnd = new CND_QUITAPPLICATION();
 				break;
 			case ((-3 << 16) | 0xFFFD):
-				cnd = new CND_NEVER();
+				cnd = new CND_LEVEL();
 				break;
 			case ((-2 << 16) | 0xFFFD):
-				cnd = new CND_ALWAYS();
+				cnd = new CND_END();
 				break;
 			case ((-1 << 16) | 0xFFFD):
 				cnd = new CND_START();
@@ -8285,6 +8512,15 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case ((-1 << 16) | 0xFFFB):
 				cnd = new CND_NOMOREALLZONE_OLD();
 				break;
+	        case (((-80 - 4) << 16) | 2):
+	            cnd = new CND_CMPSCALEY();
+	            break;
+	        case (((-80 - 3) << 16) | 2):
+	            cnd = new CND_CMPSCALEX();
+	            break;
+	        case (((-80 - 2) << 16) | 2):
+	            cnd = new CND_CMPANGLE();
+	            break;
 			case (((-80 - 1) << 16) | 7):
 				cnd = new CND_CCOUNTER();
 				break;
@@ -8312,6 +8548,24 @@ window['Runtime'] = (function Runtime(__can, __path){
 			default:
 				switch (c & 0xFFFF0000)
 				{
+	                case (-49 << 16):
+	                    cnd = new CND_EXTCMPINSTANCEDATA();
+	                    break;
+	                case (-48 << 16):
+	                    cnd = new CND_EXTPICKMAXVALUE();
+	                    break;
+	                case (-47 << 16):
+	                    cnd = new CND_EXTPICKMINVALUE();
+	                    break;
+	                case (-46 << 16):
+	                    cnd = new CND_EXTCMPLAYER();
+	                    break;
+	                case (-45 << 16):
+	                    cnd = new CND_EXTCOMPARE();
+	                    break;
+	                case (-44 << 16):
+	                    cnd = new CND_EXTPICKCLOSEST();
+	                    break;
 				    case (-43 << 16):
 				        cnd = new CND_EXTCMPVARCONST();
 				        break;
@@ -8464,7 +8718,19 @@ window['Runtime'] = (function Runtime(__can, __path){
 				for (n = 0; n < cnd.evtNParams; n++)
 				{
 					cnd.evtParams[n] = CParam.create(app);
-				}
+	            }
+
+	            // *CND_EXTONLOOP*
+	            if (cnd.evtCode == (-41 << 16))       // if (cnd instanceof CND_EXTONLOOP)
+	            {
+	                var pExp = cnd.evtParams[0];
+	                if (pExp.tokens.length == 2 && pExp.tokens[0].code == CExp.EXP_STRING && pExp.tokens[1].code == 0)
+	                {
+	                    cnd.bDeterminedName = true;
+	                    cnd.name = pExp.tokens[0].string.toLowerCase(); // toLowerCase for faster comparison with foreach name if for some reason foreach loops can't be optimized
+	                }
+	            }
+				// *CND_EXTONLOOP*
 			}
 		}
 		app.file.seek(debut + size);
@@ -8624,32 +8890,32 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var p = this.evtParams[0];
 			var value;
 
-			var token = p.tokens[0];
-			if ( (token.code == CExp.EXP_LONG || token.code == CExp.EXP_DOUBLE) && p.tokens[1].code == 0 )
-			{
-				var value = token.value;
-				while (pHo != null)
-				{
-					if (pRoutine.evaExpRoutine(pHo, value, p.comparaison) == false)
-					{
-						cpt--;
-						rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-					}
-					pHo = rhPtr.rhEvtProg.evt_NextObject();
-				}
-			}
-			else
-			{
-				while (pHo != null)
-				{
-					value = rhPtr.get_EventExpressionInt(p);
-					if (pRoutine.evaExpRoutine(pHo, value, p.comparaison) == false)
-					{
-						cpt--;
-						rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-					}
-					pHo = rhPtr.rhEvtProg.evt_NextObject();
-				}
+	        var token = p.tokens[0];
+
+	        // No interdependence between event object and parameter objects? evaluate expression before the loop
+	        if ((this.evtFlags2 & CEvent.EVFLAG2_NOOBJECTINTERDEPENDENCE) != 0) {
+	            var value;
+	            if ((token.code == CExp.EXP_LONG || token.code == CExp.EXP_DOUBLE) && p.tokens[1].code == 0)	// Simple constant expression? avoid evaluating expression
+	                value = token.value;
+	            else
+	                value = rhPtr.get_EventExpressionInt(p);
+	            while (pHo != null) {
+	                if (pRoutine.evaExpRoutine(pHo, value, p.comparaison) == false) {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            }
+	        }
+	        else {
+	            while (pHo != null) {
+	                value = rhPtr.get_EventExpressionInt(p);
+	                if (pRoutine.evaExpRoutine(pHo, value, p.comparaison) == false) {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            }
 			}
 			if (cpt != 0)
 				return true;
@@ -8717,7 +8983,15 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var pHo2;
 			do
 			{
-				list = rhPtr.objectAllCol_IXY(pHo, pHo.roc.rcImage, pHo.roc.rcAngle, pHo.roc.rcScaleX, pHo.roc.rcScaleY, pHo.hoX, pHo.hoY, oi2List);
+	            // Test at a specific position?
+	            var hox = pHo.hoX;
+	            var hoy = pHo.hoY;
+	            if (this.evtNParams >= 3) {
+	                hox = rhPtr.get_EventExpressionInt(this.evtParams[1]);
+	                hoy = rhPtr.get_EventExpressionInt(this.evtParams[2]);
+	            }
+
+	            list = rhPtr.objectAllCol_IXY(pHo, pHo.roc.rcImage, pHo.roc.rcAngle, pHo.roc.rcScaleX, pHo.roc.rcScaleY, hox, hoy, oi2List);
 				if (list == null)
 				{
 					if (negate == false)
@@ -9042,9 +9316,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 			var pEvg = rhPtr.rhEvtProg.rhEventGroup;
 			if ((pEvg.evgFlags & CEventGroup.EVGFLAGS_ONCE) != 0)
-				return false;
+	            return CCnd.negaFALSE(this);
 			pEvg.evgFlags |= CEventGroup.EVGFLAGS_ONCE;
-			return true;
+	        return CCnd.negaTRUE(this);
 		}
 	}
 	// CUT
@@ -9061,8 +9335,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 		eva2: function (rhPtr)
 		{
 			var pEvg = rhPtr.rhEvtProg.rhEventGroup;
-			if ((pEvg.evgFlags & CEventGroup.EVGFLAGS_NOMORE) != 0)
-				return true;
+	        if ((pEvg.evgFlags & CEventGroup.EVGFLAGS_NOMORE) != 0) {
+	            if (this.evtParams[0].code == CParam.PARAM_EXPRESSIONNUM)
+	                pEvg.evgInhibit = rhPtr.get_EventExpressionInt(this.evtParams[0]) / 10;
+	            return true;
+	        }
 			if ((pEvg.evgFlags & (CEventGroup.EVGFLAGS_REPEAT | CEventGroup.EVGFLAGS_NOTALWAYS)) != 0)
 				return false;
 
@@ -9257,6 +9534,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			if (rhPtr.rhEvtProg.select_ZoneTypeObjects(this.evtParams[0], 0) != 0)
 				return true;
 			return false;
@@ -9275,6 +9554,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			if (rhPtr.rhEvtProg.select_ZoneTypeObjects(this.evtParams[0], COI.OBJ_SPR) != 0)
 				return true;
 			return false;
@@ -9483,8 +9764,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
-			var p = this.evtParams[0];
-			rhPtr.rhEvtProg.count_ZoneTypeObjects(p, -1, 0);
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
+	        var p = this.evtParams[0];
+	   		rhPtr.rhEvtProg.count_ZoneTypeObjects(p, -1, 0);
 			if (rhPtr.rhEvtProg.evtNSelectedObjects == 0)
 				return false;
 
@@ -9508,6 +9791,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			var p = this.evtParams[0];
 			rhPtr.rhEvtProg.count_ZoneTypeObjects(p, -1, COI.OBJ_SPR);
 			if (rhPtr.rhEvtProg.evtNSelectedObjects == 0)
@@ -9533,6 +9818,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			rhPtr.rhEvtProg.count_ZoneTypeObjects(this.evtParams[0], -1, 0);
 			if (rhPtr.rhEvtProg.evtNSelectedObjects != 0)
 				return false;
@@ -9552,6 +9839,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			rhPtr.rhEvtProg.count_ZoneTypeObjects(this.evtParams[0], -1, COI.OBJ_SPR);
 			if (rhPtr.rhEvtProg.evtNSelectedObjects != 0)
 				return false;
@@ -9608,9 +9897,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        var next = rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			rhPtr.rhEvtProg.count_ZoneTypeObjects(this.evtParams[0], -1, 0);
-			var value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
-			var comp = this.evtParams[1].comparaison;
+	        var value2 = rhPtr.get_EventExpressionAny(this.evtParams[next]);
+	        var comp = this.evtParams[next].comparaison;
 			return CRun.compareTo(rhPtr.rhEvtProg.evtNSelectedObjects, value2, comp);
 		}
 	}
@@ -9627,10 +9918,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        var next = rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			rhPtr.rhEvtProg.count_ZoneTypeObjects(this.evtParams[0], -1, COI.OBJ_SPR);
 
-			var value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
-			var comp = this.evtParams[1].comparaison;
+	        var value2 = rhPtr.get_EventExpressionAny(this.evtParams[next]);
+	        var comp = this.evtParams[next].comparaison;
 			return CRun.compareTo(rhPtr.rhEvtProg.evtNSelectedObjects, value2, comp);
 		}
 	}
@@ -9701,17 +9994,422 @@ window['Runtime'] = (function Runtime(__can, __path){
 	}
 	// CUT
 
+	function CND_EXTCOMPARE() {
+	}
+	CND_EXTCOMPARE.prototype = {
+	    eva1: function (rhPtr, hoPtr) {
+	        return this.eva2(rhPtr);
+	    },
+	    eva2: function (rhPtr) {
+
+	        var pHo = rhPtr.rhEvtProg.evt_FirstObject(this.evtOiList);
+	        if (pHo == null)
+	            return false;
+	        var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
+
+	        var comp = this.evtParams[1].comparaison;
+
+	        // Qualifier?
+	        var pqoi = null;
+	        var saveQoiOi;
+	        var saveQoiOiList;
+	        var oil = this.evtOiList;
+	        if ((oil & 0x8000) != 0) {
+	            // Modify first object in qualifier object list as Get_CurrentExpressionObjects takes the first selected object from this list
+	            pqoi = rhPtr.rhEvtProg.qualToOiList[oil & 0x7FFF];
+	            saveQoiOi = pqoi.qoiList[0];
+	            saveQoiOiList = pqoi.qoiList[1];
+	        }
+
+	        while (pHo != null) {
+	            // Save selection and set current object as first selected (warning: selection chain is broken, this is just for GetExpression)
+	            var poil = pHo.hoOiList;
+	            var saveOILEventCount = poil.oilEventCount;
+	            poil.oilEventCount = rhPtr.rhEvtProg.rh2EventCount;
+	            var saveOILListSelected = poil.oilListSelected;
+	            poil.oilListSelected = pHo.hoNumber;
+	            var saveHONextSelected = pHo.hoNextSelected;		// this is not required for GetExpression but this is in case some extension objects scan the object list in expressions
+	            pHo.hoNextSelected = -1;
+	            if (pqoi != null) {
+	                // Qualifier? force first OI
+	                pqoi.qoiList[0] = pHo.hoOi;
+	                pqoi.qoiList[1] = poil.oilIndex;
+	            }
+
+	            // Get expressions
+	            var value1 = rhPtr.get_EventExpressionAny(this.evtParams[0]);
+	            var value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
+
+	            // Restore selection
+	            poil.oilEventCount = saveOILEventCount;
+	            poil.oilListSelected = saveOILListSelected;
+	            pHo.hoNextSelected = saveHONextSelected;
+
+	            // Compare expressions
+	            if (CRun.compareTo(value1, value2, comp) == false) {
+	                cpt--;
+	                rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	            }
+
+	            pHo = rhPtr.rhEvtProg.evt_NextObject();
+	        }
+
+	        // Restore first qualifier object
+	        if (pqoi != null) {
+	            pqoi.qoiList[0] = saveQoiOi;
+	            pqoi.qoiList[1] = saveQoiOiList;
+	        }
+
+	        return (cpt != 0);
+	    }
+	}
+	// CUT
+
+	function CND_EXTPICKCLOSEST() {
+	}
+	CND_EXTPICKCLOSEST.prototype = {
+	    eva1: function (rhPtr, hoPtr) {
+	        return this.eva2(rhPtr);
+	    },
+	    eva2: function (rhPtr) {
+
+	        var pHo = rhPtr.rhEvtProg.evt_FirstObject(this.evtOiList);
+	        if (pHo == null)
+	            return false;
+	        var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
+
+	        var oi = this.evtParams[0].oi;
+	        var oi2List;
+	        if (oi >= 0) {
+	            rhPtr.isColArray[0] = oi;
+	            rhPtr.isColArray[1] = this.evtParams[0].oiList;
+	            oi2List = rhPtr.isColArray;
+	        }
+	        else {
+	            var qoil = rhPtr.rhEvtProg.qualToOiList[this.evtParams[0].oiList & 0x7FFF];
+	            oi2List = qoil.qoiList;
+	        }
+
+	        // For each object 1
+	        var minDistance;
+	        var hoList = new CArrayList();
+	        do {
+	            // Check if it's closer from object(s) 2 than previous objects 1
+	            var nOi = 0;
+	            for (nOi = 0; nOi < oi2List.length; nOi += 2) {
+	                var poil = rhPtr.rhOiList[oi2List[nOi + 1]];
+
+	                // Already selected in event?
+	                if (poil.oilEventCount == rhPtr.rhEvtProg.rh2EventCount) {
+	                    // Explore selected object list
+	                    var num = poil.oilListSelected;
+	                    while (num >= 0) {
+	                        var pHo2 = rhPtr.rhObjectList[num];
+	                        if (pHo2 == null)
+	                            break;
+	                        if ((pHo2.hoFlags & CObject.HOF_DESTROYED) == 0) {
+	                            var distance = (pHo2.hoX - pHo.hoX) * (pHo2.hoX - pHo.hoX) + (pHo2.hoY - pHo.hoY) * (pHo2.hoY - pHo.hoY);
+	                            if (hoList.size() == 0) {
+	                                minDistance = distance;
+	                                hoList.add(pHo);
+	                            }
+	                            else if (distance <= minDistance) {
+	                                if (distance == minDistance)
+	                                    hoList.add(pHo);
+	                                else {
+	                                    minDistance = distance;
+	                                    hoList.clear();
+	                                    hoList.add(pHo);
+	                                }
+	                            }
+	                        }
+	                        num = pHo2.hoNextSelected;
+	                    }
+	                }
+
+	                // Not selected => take full list
+	                else {
+	                    if (poil.oilNObjects != 0) {
+	                        var nObl = poil.oilObject;
+
+	                        do {
+	                            var pHo2 = rhPtr.rhObjectList[nObl];
+	                            if (pHo2 == null)
+	                                break;
+	                            if ((pHo2.hoFlags & CObject.HOF_DESTROYED) == 0) {
+	                                var distance = (pHo2.hoX - pHo.hoX) * (pHo2.hoX - pHo.hoX) + (pHo2.hoY - pHo.hoY) * (pHo2.hoY - pHo.hoY);
+	                                if (hoList.size() == 0) {
+	                                    minDistance = distance;
+	                                    hoList.add(pHo);
+	                                }
+	                                else if (distance <= minDistance) {
+	                                    if (distance == minDistance)
+	                                        hoList.add(pHo);
+	                                    else {
+	                                        minDistance = distance;
+	                                        hoList.clear();
+	                                        hoList.add(pHo);
+	                                    }
+	                                }
+	                            }
+
+	                            nObl = pHo2.hoNumNext;
+	                        } while (nObl >= 0);
+	                    }
+	                }
+	            }
+
+	            // Next object 1
+	            pHo = rhPtr.rhEvtProg.evt_NextObject();
+
+	        } while (pHo != null);
+
+	        if (hoList.size() == 0)
+	            return false;
+
+	        if (hoList.size() == 1)
+	            rhPtr.rhEvtProg.evt_ForceOneObject(this.evtOiList, hoList.get(0));
+	        else
+	            rhPtr.rhEvtProg.evt_SelectObjects(this.evtOiList, hoList);
+
+	        return true;
+	    }
+	}
+	// CUT
+
+	function CND_EXTPICKMAXVALUE() {
+	}
+	CND_EXTPICKMAXVALUE.prototype = {
+	    eva1: function (rhPtr, hoPtr) {
+	        return this.eva2(rhPtr);
+	    },
+	    eva2: function (rhPtr) {
+
+	        var pHo = rhPtr.rhEvtProg.evt_FirstObject(this.evtOiList);
+	        if (pHo == null)
+	            return false;
+	        var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
+
+	        // Qualifier?
+	        var pqoi = null;
+	        var saveQoiOi;
+	        var saveQoiOiList;
+	        var oil = this.evtOiList;
+	        if ((oil & 0x8000) != 0) {
+	            // Modify first object in qualifier object list as Get_CurrentExpressionObjects takes the first selected object from this list
+	            pqoi = rhPtr.rhEvtProg.qualToOiList[oil & 0x7FFF];
+	            saveQoiOi = pqoi.qoiList[0];
+	            saveQoiOiList = pqoi.qoiList[1];
+	        }
+
+	        // For each object 1
+	        var maxValue;
+	        var hoList = new CArrayList();
+	        while (pHo != null) {
+	            if ((pHo.hoFlags & CObject.HOF_DESTROYED) == 0) {
+	                // Save selection and set current object as first selected (warning: selection chain is broken, this is just for GetExpression)
+	                var poil = pHo.hoOiList;
+	                var saveOILEventCount = poil.oilEventCount;
+	                poil.oilEventCount = rhPtr.rhEvtProg.rh2EventCount;
+	                var saveOILListSelected = poil.oilListSelected;
+	                poil.oilListSelected = pHo.hoNumber;
+	                var saveHONextSelected = pHo.hoNextSelected;		// this is not required for GetExpression but this is in case some extension objects scan the object list in expressions
+	                pHo.hoNextSelected = -1;
+	                if (pqoi != null) {
+	                    // Qualifier? force first OI
+	                    pqoi.qoiList[0] = pHo.hoOi;
+	                    pqoi.qoiList[1] = poil.oilIndex;
+	                }
+
+	                // Get expressions
+	                var value = rhPtr.get_EventExpressionAny(this.evtParams[0]);
+	                if (hoList.size() == 0) {
+	                    maxValue = value;
+	                    hoList.add(pHo);
+	                }
+	                else if (value >= maxValue) {
+	                    if (value == maxValue)
+	                        hoList.add(pHo);
+	                    else {
+	                        maxValue = value;
+	                        hoList.clear();
+	                        hoList.add(pHo);
+	                    }
+	                }
+
+	                // Restore selection
+	                poil.oilEventCount = saveOILEventCount;
+	                poil.oilListSelected = saveOILListSelected;
+	                pHo.hoNextSelected = saveHONextSelected;
+	            }
+
+	            pHo = rhPtr.rhEvtProg.evt_NextObject();
+	        }
+
+	        // Restore first qualifier object
+	        if (pqoi != null) {
+	            pqoi.qoiList[0] = saveQoiOi;
+	            pqoi.qoiList[1] = saveQoiOiList;
+	        }
+
+	        if (hoList.size() == 0)
+	            return false;
+
+	        if (hoList.size() == 1)
+	            rhPtr.rhEvtProg.evt_ForceOneObject(this.evtOiList, hoList.get(0));
+	        else
+	            rhPtr.rhEvtProg.evt_SelectObjects(this.evtOiList, hoList);
+
+	        return true;
+	    }
+	}
+	// CUT
+
+	function CND_EXTPICKMINVALUE() {
+	}
+	CND_EXTPICKMINVALUE.prototype = {
+	    eva1: function (rhPtr, hoPtr) {
+	        return this.eva2(rhPtr);
+	    },
+	    eva2: function (rhPtr) {
+
+	        var pHo = rhPtr.rhEvtProg.evt_FirstObject(this.evtOiList);
+	        if (pHo == null)
+	            return false;
+	        var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
+
+	        // Qualifier?
+	        var pqoi = null;
+	        var saveQoiOi;
+	        var saveQoiOiList;
+	        var oil = this.evtOiList;
+	        if ((oil & 0x8000) != 0) {
+	            // Modify first object in qualifier object list as Get_CurrentExpressionObjects takes the first selected object from this list
+	            pqoi = rhPtr.rhEvtProg.qualToOiList[oil & 0x7FFF];
+	            saveQoiOi = pqoi.qoiList[0];
+	            saveQoiOiList = pqoi.qoiList[1];
+	        }
+
+	        // For each object 1
+	        var minValue;
+	        var hoList = new CArrayList();
+	        while (pHo != null) {
+	            if ((pHo.hoFlags & CObject.HOF_DESTROYED) == 0) {
+	                // Save selection and set current object as first selected (warning: selection chain is broken, this is just for GetExpression)
+	                var poil = pHo.hoOiList;
+	                var saveOILEventCount = poil.oilEventCount;
+	                poil.oilEventCount = rhPtr.rhEvtProg.rh2EventCount;
+	                var saveOILListSelected = poil.oilListSelected;
+	                poil.oilListSelected = pHo.hoNumber;
+	                var saveHONextSelected = pHo.hoNextSelected;		// this is not required for GetExpression but this is in case some extension objects scan the object list in expressions
+	                pHo.hoNextSelected = -1;
+	                if (pqoi != null) {
+	                    // Qualifier? force first OI
+	                    pqoi.qoiList[0] = pHo.hoOi;
+	                    pqoi.qoiList[1] = poil.oilIndex;
+	                }
+
+	                // Get expressions
+	                var value = rhPtr.get_EventExpressionAny(this.evtParams[0]);
+	                if (hoList.size() == 0) {
+	                    minValue = value;
+	                    hoList.add(pHo);
+	                }
+	                else if (value <= minValue) {
+	                    if (value == minValue)
+	                        hoList.add(pHo);
+	                    else {
+	                        minValue = value;
+	                        hoList.clear();
+	                        hoList.add(pHo);
+	                    }
+	                }
+
+	                // Restore selection
+	                poil.oilEventCount = saveOILEventCount;
+	                poil.oilListSelected = saveOILListSelected;
+	                pHo.hoNextSelected = saveHONextSelected;
+	            }
+
+	            pHo = rhPtr.rhEvtProg.evt_NextObject();
+	        }
+
+	        // Restore first qualifier object
+	        if (pqoi != null) {
+	            pqoi.qoiList[0] = saveQoiOi;
+	            pqoi.qoiList[1] = saveQoiOiList;
+	        }
+
+	        if (hoList.size() == 0)
+	            return false;
+
+	        if (hoList.size() == 1)
+	            rhPtr.rhEvtProg.evt_ForceOneObject(this.evtOiList, hoList.get(0));
+	        else
+	            rhPtr.rhEvtProg.evt_SelectObjects(this.evtOiList, hoList);
+
+	        return true;
+	    }
+	}
+	// CUT
+
+	function CND_EXTCMPLAYER() {
+	}
+	CND_EXTCMPLAYER.prototype = CServices.extend(new CCnd(),
+	    {
+	        eva1: function (rhPtr, hoPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        eva2: function (rhPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        evaExpRoutine: function (hoPtr, value, comp) {
+	            return CRun.compareTer(hoPtr.hoLayer + 1, value, comp);		// +1 because layer indexes are 1-based
+	        }
+	    });
+	// CUT
+
+	function CND_EXTCMPINSTANCEDATA() {
+	}
+	CND_EXTCMPINSTANCEDATA.prototype = CServices.extend(new CCnd(),
+	    {
+	        eva1: function (rhPtr, hoPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        eva2: function (rhPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        evaExpRoutine: function (hoPtr, value, comp) {
+
+	            var instanceValue = 0;
+	            var hlo = hoPtr.hoHFII;
+	            if (hlo != -1) {
+	                var loPtr = hoPtr.hoAdRunHeader.rhFrame.LOList.getLOFromHandle(hlo);
+	                if (loPtr != null) {
+	                    instanceValue = loPtr.loValue;
+	                }
+	            }
+
+	            return CRun.compareTer(instanceValue, value, comp);		// +1 because layer indexes are 1-based
+	        }
+	    });
+	// CUT
+
+
 	function CND_EXTONLOOP()
 	{
+	    this.bDeterminedName = false;
+	    this.name = null;
 	}
 	CND_EXTONLOOP.prototype =
 	{
 		eva1: function (rhPtr, pHo)
 		{
-			var pName = rhPtr.get_EventExpressionString(this.evtParams[0]);
+	        if (!this.bDeterminedName)
+	            this.name = rhPtr.get_EventExpressionString(this.evtParams[0]);
 			if (rhPtr.rh4CurrentForEach != null)
 			{
-				if (CServices.compareStringsIgnoreCase(rhPtr.rh4CurrentForEach.name, pName))
+	            if (rhPtr.rhEvtProg.allOnEachLoopsAreOptimized || CServices.compareStringsIgnoreCase(rhPtr.rh4CurrentForEach.name, this.name))
 				{
 				    if (this.evtNParams > 1) {
 				        var p = this.evtParams[1];  // PARAM_MULTIPLEVAR
@@ -9725,7 +10423,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 			if (rhPtr.rh4CurrentForEach2 != null)
 			{
-				if (CServices.compareStringsIgnoreCase(rhPtr.rh4CurrentForEach2.name, pName))
+	            if (CServices.compareStringsIgnoreCase(rhPtr.rh4CurrentForEach2.name, this.name))
 				{
 				    if (this.evtNParams > 1) {
 				        var p = this.evtParams[1];  // PARAM_MULTIPLEVAR
@@ -9742,11 +10440,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 		eva2: function (rhPtr)
 		{
 			var pHo2 = null;
-			var pName = rhPtr.get_EventExpressionString(this.evtParams[0]);
+	        if (!this.bDeterminedName)
+	            this.name = rhPtr.get_EventExpressionString(this.evtParams[0]);
 			var pForEach = rhPtr.rh4CurrentForEach;
 			if (pForEach != null)
 			{
-				if (CServices.compareStringsIgnoreCase(pForEach.name, pName))
+	            if (rhPtr.rhEvtProg.allOnEachLoopsAreOptimized || CServices.compareStringsIgnoreCase(pForEach.name, this.name))
 				{
 				    if (pForEach.oi == this.evtOiList)
 					{
@@ -9758,7 +10457,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			pForEach = rhPtr.rh4CurrentForEach2;
 			if (pForEach != null)
 			{
-				if (CServices.compareStringsIgnoreCase(pForEach.name, pName))
+	            if (CServices.compareStringsIgnoreCase(pForEach.name, this.name))
 				{
 				    if (pForEach.oi == this.evtOiList)
 					{
@@ -9877,6 +10576,38 @@ window['Runtime'] = (function Runtime(__can, __path){
 		eva2: function (rhPtr)
 		{
 			return false;
+		}
+	}
+	// CUT
+
+	function CND_LEVEL()
+	{
+	}
+	CND_LEVEL.prototype =
+	{
+		eva1: function (rhPtr, hoPtr)
+		{
+			return false;
+		},
+		eva2: function (rhPtr)
+		{
+			return false;
+		}
+	}
+	// CUT
+
+	function CND_END()
+	{
+	}
+	CND_END.prototype =
+	{
+		eva1: function (rhPtr, hoPtr)
+		{
+			return true;
+		},
+		eva2: function (rhPtr)
+		{
+			return true;
 		}
 	}
 	// CUT
@@ -10309,6 +11040,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var key = rhPtr.rhEvtProg.rhCurParam0;
 			if (this.evtParams[0].value == key)
 			{
+	            rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 1);
+
 				var p = this.evtParams[1];
 				if (rhPtr.rh2MouseX >= p.x1 && rhPtr.rh2MouseX < p.x2 && rhPtr.rh2MouseY >= p.y1 && rhPtr.rh2MouseY < p.y2)
 				{
@@ -10321,6 +11054,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 			if (this.evtParams[0].value == rhPtr.rhEvtProg.rh2CurrentClick)
 			{
+	            rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 1);
+
 				var p = this.evtParams[1];
 				if (rhPtr.rh2MouseX >= p.x1 && rhPtr.rh2MouseX < p.x2 && rhPtr.rh2MouseY >= p.y1 && rhPtr.rh2MouseY < p.y2)
 				{
@@ -10358,6 +11093,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var qoi;
 			for (qoi = 0; qoi < qoil.qoiList.length; qoi += 2)
 			{
+	            if (qoil.qoiList[qoi] < 0)
+	                break;
 				if (qoil.qoiList[qoi] == oi)
 				{
 					rhPtr.rhEvtProg.evt_AddCurrentQualifier(oil);
@@ -10390,6 +11127,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			var p = this.evtParams[0];
 			if (rhPtr.rh2MouseX >= p.x1 && rhPtr.rh2MouseX < p.x2 && rhPtr.rh2MouseY >= p.y1 && rhPtr.rh2MouseY < p.y2)
 				return CCnd.negaTRUE(this);
@@ -10821,6 +11560,63 @@ window['Runtime'] = (function Runtime(__can, __path){
 	}
 	// CUT
 
+	// Active objects
+	// ----------------------------------------------------------------
+	function CND_CMPANGLE() {
+	}
+	CND_CMPANGLE.prototype = CServices.extend(new CCnd(),
+	    {
+	        eva1: function (rhPtr, hoPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        eva2: function (rhPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        evaExpRoutine: function (hoPtr, value, comp) {
+	            var angle = hoPtr.roc.rcAngle;
+	            var pMovement = hoPtr.hoAdRunHeader.GetMBase(hoPtr);
+	            if (pMovement) {
+	                angle = pMovement.getAngle();
+	                if (angle == CRunMBase.ANGLE_MAGIC)
+	                    angle = hoPtr.roc.rcAngle;
+	            }
+	            return CRun.compareTer(angle, value, comp);
+	        }
+	    });
+	// CUT
+
+	function CND_CMPSCALEX() {
+	}
+	CND_CMPSCALEX.prototype = CServices.extend(new CCnd(),
+	    {
+	        eva1: function (rhPtr, hoPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        eva2: function (rhPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        evaExpRoutine: function (hoPtr, value, comp) {
+	            return CRun.compareTer(hoPtr.roc.rcScaleX, value, comp);
+	        }
+	    });
+	// CUT
+
+	function CND_CMPSCALEY() {
+	}
+	CND_CMPSCALEY.prototype = CServices.extend(new CCnd(),
+	    {
+	        eva1: function (rhPtr, hoPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        eva2: function (rhPtr) {
+	            return this.evaExpObject(rhPtr, this);
+	        },
+	        evaExpRoutine: function (hoPtr, value, comp) {
+	            return CRun.compareTer(hoPtr.roc.rcScaleY, value, comp);
+	        }
+	    });
+	// CUT
+
 	// Active and extension objects
 	// ----------------------------------------------------------------
 	function CND_EXTHIDDEN()
@@ -11041,36 +11837,63 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
 			var value1;
 			var value2;
-			var p = this.evtParams[1];
-			do
-			{
-				var num;
-				if (this.evtParams[0].code == 53)
-					num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
-				else
-					num = this.evtParams[0].value;
+	        var p = this.evtParams[1];
+	        var num;
+	        if ((this.evtFlags2 & CEvent.EVFLAG2_NOOBJECTINTERDEPENDENCE) != 0) {
 
-				if (num >= 0 && pHo.rov != null)
-				{
-					if (num < pHo.rov.rvValues.length)
-						value1 = pHo.rov.getValue(num);
-					else
-						value1 = 0;
-					value2 = rhPtr.get_EventExpressionAny(p);
+	            if (this.evtParams[0].code == 53)
+	                num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
+	            else
+	                num = this.evtParams[0].value;
+	            value2 = rhPtr.get_EventExpressionAny(p);
 
-					if (CRun.compareTo(value1, value2, p.comparaison) == false)
-					{
-						cpt--;
-						rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-					}
-				}
-				else
-				{
-					cpt--;
-					rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-				}
-				pHo = rhPtr.rhEvtProg.evt_NextObject();
-			} while (pHo != null);
+	            do {
+
+	                if (num >= 0 && pHo.rov != null) {
+	                    if (num < pHo.rov.rvValues.length)
+	                        value1 = pHo.rov.getValue(num);
+	                    else
+	                        value1 = 0;
+
+	                    if (CRun.compareTo(value1, value2, p.comparaison) == false) {
+	                        cpt--;
+	                        rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                    }
+	                }
+	                else {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            } while (pHo != null);
+	        }
+	        else {
+
+	            do {
+	                if (this.evtParams[0].code == 53)
+	                    num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
+	                else
+	                    num = this.evtParams[0].value;
+
+	                if (num >= 0 && pHo.rov != null) {
+	                    if (num < pHo.rov.rvValues.length)
+	                        value1 = pHo.rov.getValue(num);
+	                    else
+	                        value1 = 0;
+	                    value2 = rhPtr.get_EventExpressionAny(p);
+
+	                    if (CRun.compareTo(value1, value2, p.comparaison) == false) {
+	                        cpt--;
+	                        rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                    }
+	                }
+	                else {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            } while (pHo != null);
+	        }
 			return (cpt != 0);
 		}
 	}
@@ -11124,11 +11947,93 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 			eva1:          function (rhPtr, hoPtr)
 			{
-				return this.evaExpObject(rhPtr, this);
+	            //return this.eva2(rhPtr);
+	            return this.evaExpObject(rhPtr, this);
 			},
 			eva2:          function (rhPtr)
 			{
-				return this.evaExpObject(rhPtr, this);
+	            // Possible object conflict between condition and expression?
+	            //if ((this.evtFlags2 & CEvent.EVFLAG2_NOOBJECTINTERDEPENDENCE) == 0)
+	                return this.evaExpObject(rhPtr, this);
+
+	            /* Doesn't work in some cases yet
+	            var p = this.evtParams[0];
+	            if (p.comparaison != 0)	// COMPARE_EQ
+	                return this.evaExpObject(rhPtr, this);
+
+	            // No object conflict between condition and expression => get fixed value from expression parameter and directly get unique object
+	            var fixedValue;
+	            if (p.tokens.length == 2 && (p.tokens[0].code == CExp.EXP_LONG || p.tokens[0].code == CExp.EXP_DOUBLE) && p.tokens[1].code == 0) {
+	                fixedValue = p.tokens[0].value;
+	            }
+	            else {
+	                fixedValue = rhPtr.get_EventExpressionInt(p);
+	            }
+
+	            // Does the fixed value correspond to an existing object?
+	            var honum = (fixedValue & 0xFFFF);
+	            var pHo = null;
+	            if (honum < rhPtr.rhObjectList.length)
+	                pHo = rhPtr.rhObjectList[honum];
+	            if (pHo == null || pHo.hoCreationId != ((fixedValue >>> 16) & 0xFFFF)) {
+	                rhPtr.rhEvtProg.evt_DeselectObject(this.evtOiList);
+	                return false;
+	            }
+
+	            // Verify CObjInfo is identical
+	            if (pHo.hoOiList.oilIndex != this.evtOiList) {
+	                // Nope, is this.evtOiList a qualifier?
+	                var oilOK = false;
+	                if ((this.evtOiList & 0x8000) != 0) {
+	                    // Yes, check if pHo has this qualifier
+	                    var q = (this.evtOiList & 0x7FFF);
+	                    if (pHo.hoOiList.oilRealQualifiers != null) {
+	                        var rq;
+	                        for (rq = 0; rq < pHo.hoOiList.oilRealQualifiers.length; rq++) {
+	                            var qo = pHo.hoOiList.oilRealQualifiers[rq];
+	                            if (qo == q) {
+	                                oilOK = true;
+	                                break;      // object has this qualifier
+	                            }
+	                        }
+	                    }
+	                }
+	                if (!oilOK) {
+	                    rhPtr.rhEvtProg.evt_DeselectObject(this.evtOiList);
+	                    return false;
+	                }
+	            }
+
+	            // Verify if object is selected
+	            var oilPtr = pHo.hoOiList;
+	            if (oilPtr.oilEventCount == rhPtr.rhEvtProg.rh2EventCount) {
+	                // CObjInfo partially selected => check if the object is in the selection list
+	                var isSelected = false;
+	                var ois = oilPtr.oilListSelected;
+	                if (ois >= 0) {
+	                    var pHo1;
+	                    do {
+	                        if (pHo.hoNumber == ois) {
+	                            isSelected = true;
+	                            break;                          // object is selected
+	                        }
+	                        pHo1 = rhPtr.rhObjectList[ois];
+	                        if (pHo1 == null)
+	                            break;
+	                        ois = pHo1.hoNextSelected;
+	                    } while (ois >= 0);
+	                }
+	                if (!isSelected) {
+	                    rhPtr.rhEvtProg.evt_DeselectObject(this.evtOiList);
+	                    return false;   // object not found in selection list for this CObjInfo
+	                }
+	            }
+	            //else ; // CObjInfo fully selected => object is selected
+	            //
+
+	            // Yes => select unique object
+	            rhPtr.rhEvtProg.evt_ForceOneObject(this.evtOiList, pHo);
+	            return true; */
 			},
 			evaExpRoutine: function (hoPtr, value, comp)
 			{
@@ -11155,32 +12060,53 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var cpt = rhPtr.rhEvtProg.evtNSelectedObjects;
 			var value1;
 			var value2;
-			do
-			{
-				var num;
-				if (this.evtParams[0].code == 62)
-					num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
-				else
-					num = this.evtParams[0].value;
+	        var num;
+	        if ((this.evtFlags2 & CEvent.EVFLAG2_NOOBJECTINTERDEPENDENCE) != 0) {
+	            if (this.evtParams[0].code == 62)
+	                num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
+	            else
+	                num = this.evtParams[0].value;
+	            value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
 
-				if (num >= 0 && pHo.rov != null && num < pHo.rov.rvStrings.length)
-				{
-					value1 = pHo.rov.getString(num);
-					value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
+	            do {
+	                if (num >= 0 && pHo.rov != null && num < pHo.rov.rvStrings.length) {
+	                    value1 = pHo.rov.getString(num);
 
-					if (CRun.compareTo(value1, value2, this.evtParams[1].comparaison) == false)
-					{
-						cpt--;
-						rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-					}
-				}
-				else
-				{
-					cpt--;
-					rhPtr.rhEvtProg.evt_DeleteCurrentObject();
-				}
-				pHo = rhPtr.rhEvtProg.evt_NextObject();
-			} while (pHo != null);
+	                    if (CRun.compareTo(value1, value2, this.evtParams[1].comparaison) == false) {
+	                        cpt--;
+	                        rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                    }
+	                }
+	                else {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            } while (pHo != null);
+	        }
+	        else {
+	            do {
+	                if (this.evtParams[0].code == 62)
+	                    num = rhPtr.get_EventExpressionInt(this.evtParams[0]);
+	                else
+	                    num = this.evtParams[0].value;
+
+	                if (num >= 0 && pHo.rov != null && num < pHo.rov.rvStrings.length) {
+	                    value1 = pHo.rov.getString(num);
+	                    value2 = rhPtr.get_EventExpressionAny(this.evtParams[1]);
+
+	                    if (CRun.compareTo(value1, value2, this.evtParams[1].comparaison) == false) {
+	                        cpt--;
+	                        rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                    }
+	                }
+	                else {
+	                    cpt--;
+	                    rhPtr.rhEvtProg.evt_DeleteCurrentObject();
+	                }
+	                pHo = rhPtr.rhEvtProg.evt_NextObject();
+	            } while (pHo != null);
+	        }
 			return (cpt != 0);
 		}
 	}
@@ -11370,7 +12296,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				var index;
 				for (index = 0; index < qoil.qoiList.length; index += 2)
 				{
-					if (qoil.qoiList[index] == lookFor)
+	                var noi = qoil.qoiList[index];
+	                if (noi < 0)
+	                    break;
+					if (noi == lookFor)
 						return true;
 				}
 				return false;
@@ -11580,9 +12509,17 @@ window['Runtime'] = (function Runtime(__can, __path){
 			},
 			evaObjectRoutine: function (hoPtr)
 			{
-				if (hoPtr.hoAdRunHeader.colMask_TestObject_IXY(hoPtr, hoPtr.roc.rcImage, hoPtr.roc.rcAngle, hoPtr.roc.rcScaleX, hoPtr.roc.rcScaleY, hoPtr.hoX, hoPtr.hoY, 0, CColMask.CM_TEST_OBSTACLE))
+	            // Test at a specific position?
+	            var hox = hoPtr.hoX;
+	            var hoy = hoPtr.hoY;
+	            if (this.evtNParams >= 2) {
+	                hox = hoPtr.hoAdRunHeader.get_EventExpressionInt(this.evtParams[0]);
+	                hoy = hoPtr.hoAdRunHeader.get_EventExpressionInt(this.evtParams[1]);
+	            }
+
+	            if (hoPtr.hoAdRunHeader.colMask_TestObject_IXY(hoPtr, hoPtr.roc.rcImage, hoPtr.roc.rcAngle, hoPtr.roc.rcScaleX, hoPtr.roc.rcScaleY, hox, hoy, 0, CColMask.CM_TEST_OBSTACLE))
 					return CCnd.negaTRUE(this);
-				if (hoPtr.hoAdRunHeader.colMask_TestObject_IXY(hoPtr, hoPtr.roc.rcImage, hoPtr.roc.rcAngle, hoPtr.roc.rcScaleX, hoPtr.roc.rcScaleY, hoPtr.hoX, hoPtr.hoY, 0, CColMask.CM_TEST_PLATFORM))
+	            if (hoPtr.hoAdRunHeader.colMask_TestObject_IXY(hoPtr, hoPtr.roc.rcImage, hoPtr.roc.rcAngle, hoPtr.roc.rcScaleX, hoPtr.roc.rcScaleY, hox, hoy, 0, CColMask.CM_TEST_PLATFORM))
 					return CCnd.negaTRUE(this);
 				return CCnd.negaFALSE(this);
 			}
@@ -11803,7 +12740,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var qoi;
 			for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 			{
-				poil = rhPtr.rhOiList[pqoi.qoiList[qoi + 1]];
+	            var noil = pqoi.qoiList[qoi + 1];
+	            if (noil < 0)
+	                break;
+				poil = rhPtr.rhOiList[noil];
 				count += poil.oilNObjects;
 			}
 			count -= sub;
@@ -11825,6 +12765,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			var count = rhPtr.rhEvtProg.count_ZoneOneObject(this.evtOiList, this.evtParams[0]);
 			return count == 0;
 		}
@@ -11842,9 +12784,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 		},
 		eva2: function (rhPtr)
 		{
+	        var next = rhPtr.rhEvtProg.updateZoneCoordinates(this.evtParams, 0);
+
 			var count = rhPtr.rhEvtProg.count_ZoneOneObject(this.evtOiList, this.evtParams[0]);
-			var number = rhPtr.get_EventExpressionInt(this.evtParams[1]);
-			return CRun.compareTer(count, number, this.evtParams[1].comparaison);
+	        var number = rhPtr.get_EventExpressionInt(this.evtParams[next]);
+	        return CRun.compareTer(count, number, this.evtParams[next].comparaison);
 		}
 	}
 	// CUT
@@ -11876,7 +12820,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 					var qoi;
 					for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 					{
-						poil = rhPtr.rhOiList[pqoi.qoiList[qoi + 1]];
+	                    var noil = pqoi.qoiList[qoi + 1];
+	                    if (noil < 0)
+	                        break;
+						poil = rhPtr.rhOiList[noil];
 						count += poil.oilNObjects;
 					}
 				}
@@ -12359,7 +13306,13 @@ window['Runtime'] = (function Runtime(__can, __path){
 				break;
 		    case ((67 << 16) | 0xFFFF):
 		        exp = new EXP_RUNTIMENAME();
-		        break;
+	            break;
+	        case ((68 << 16) | 0xFFFF):
+	            exp = new EXP_STRINGREPLACE();
+	            break;
+	        //case ((69 << 16) | 0xFFFF):
+	        //    exp = new EXP_STRINGREGEX();
+	        //    break;
 		    case ((-1 << 16) | 0xFFFF):
 				exp = new EXP_PARENTH1();
 				break;
@@ -12405,6 +13358,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case ((11 << 16) | 0xFFFE):
 				exp = new EXP_GETCHANNELFREQ();
 				break;
+	        case ((12 << 16) | 0xFFFE):
+	            exp = new EXP_GETCHANNELSNDNAME();
+	            break;
 			case ((0 << 16) | 0xFFFD):
 				exp = new EXP_GAMLEVEL();
 				break;
@@ -12504,9 +13460,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case ((4 << 16) | 0xFFF9):
 				exp = new EXP_GETPLAYERNAME();
 				break;
-			case ((0 << 16) | 0xFFFB):
-				exp = new EXP_CRENUMBERALL();
-				break;
+	        case ((0 << 16) | 0xFFFB):
+	            exp = new EXP_CRENUMBERALL();
+	            break;
+	        case ((1 << 16) | 0xFFFB):
+	            exp = new EXP_LASTFIXEDVALUE();
+	            break;
 			case (( (80 + 0) << 16) | 3):
 				exp = new EXP_STRNUMBER();
 				break;
@@ -12695,7 +13654,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 				    case (44 << 16):
 				        exp = new EXP_EXTGETNAME();
 				        break;
-
+				    case (45 << 16):
+	                    exp = new EXP_NUMBEROFSELECTED();
+				        break;
+				    case (46 << 16):
+	                    exp = new EXP_EXTINSTANCEDATA();
+				        break;
 					default:
 						exp = new CExpExtension();
 						break;
@@ -12874,6 +13838,44 @@ window['Runtime'] = (function Runtime(__can, __path){
 		evaluate: function (rhPtr)
 		{
 			rhPtr.rh4Results[rhPtr.rh4PosPile] = this.string;
+		}
+	}
+
+	//function EXP_STRINGREGEX()
+	//{
+	//}
+	//EXP_STRINGREGEX.prototype =
+	//{
+	//	evaluate: function (rhPtr)
+	//	{
+	//		rhPtr.rh4CurToken++;
+	//		var pSourceString = rhPtr.getExpression();
+	//		rhPtr.rh4CurToken++;
+	//		var pPatternString = rhPtr.getExpression();
+	//		rhPtr.rh4CurToken++;
+	//		var pReplaceString = rhPtr.getExpression();
+
+	//		const searchRegExp = new RegExp(pPatternString, 'g');
+
+	//		rhPtr.rh4Results[rhPtr.rh4PosPile] = pSourceString.replace(searchRegExp, pReplaceString);
+	//	}
+	//}
+
+	function EXP_STRINGREPLACE()
+	{
+	}
+	EXP_STRINGREPLACE.prototype =
+	{
+		evaluate: function (rhPtr)
+		{
+			rhPtr.rh4CurToken++;
+	        var pSourceString = rhPtr.getExpression();
+			rhPtr.rh4CurToken++;
+	        var pFindString = rhPtr.getExpression();
+			rhPtr.rh4CurToken++;
+	        var pReplaceString = rhPtr.getExpression();
+
+			rhPtr.rh4Results[rhPtr.rh4PosPile] = pSourceString.split(pFindString).join(pReplaceString);
 		}
 	}
 
@@ -13966,6 +14968,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 						if (iValue != result)
 							rhPtr.flagFloat = true;
 					}
+					else
+						result = 0;
 				}
 			}
 			rhPtr.rh4Results[rhPtr.rh4PosPile] = result;
@@ -14113,7 +15117,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 	{
 		evaluate: function (rhPtr)
 		{
-			rhPtr.rh4Results[rhPtr.rh4PosPile] = 255;
+			rhPtr.rh4Results[rhPtr.rh4PosPile] = 0;
 		}
 	}
 	// CUT
@@ -14356,6 +15360,18 @@ window['Runtime'] = (function Runtime(__can, __path){
 		evaluate: function (rhPtr)
 		{
 			rhPtr.rh4Results[rhPtr.rh4PosPile] = rhPtr.rhNObjects;
+		}
+	}
+	// CUT
+
+	function EXP_LASTFIXEDVALUE()
+	{
+	}
+	EXP_LASTFIXEDVALUE.prototype =
+	{
+		evaluate: function (rhPtr)
+		{
+	        rhPtr.rh4Results[rhPtr.rh4PosPile] = rhPtr.rhLastCreatedObjectFixedValue;
 		}
 	}
 	// CUT
@@ -15020,7 +16036,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 					var qoi;
 					for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 					{
-						poil = rhPtr.rhOiList[pqoi.qoiList[qoi + 1]];
+	                    var noil = pqoi.qoiList[qoi + 1];
+	                    if (noil < 0)
+	                        break;
+	                    poil = rhPtr.rhOiList[noil];
 						count += poil.oilNObjects;
 					}
 				}
@@ -15317,9 +16336,13 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var rgb = 0;
 			if (hoPtr.roc.rcImage != -1)
 			{
-				var image = rhPtr.rhApp.imageBank.getImageFromHandle(hoPtr.roc.rcImage);
-				rgb = image.getPixel(x, y);
-				rgb = CServices.swapRGB(rgb);
+			    var image = rhPtr.rhApp.imageBank.getImageFromHandle(hoPtr.roc.rcImage);
+			    if (image != null) {
+			        rgb = image.getPixel(x, y);
+			        rgb = CServices.swapRGB(rgb);
+			    }
+			    else
+			        rgb = 0;
 			}
 			rhPtr.rh4Results[rhPtr.rh4PosPile] = rgb;
 		}
@@ -15391,6 +16414,18 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var value = rhPtr.get_ExpressionInt();
 			rhPtr.rh4Results[rhPtr.rh4PosPile] = rhPtr.rhApp.soundPlayer.getFrequencyChannel(value - 1);
 		}
+	}
+	// CUT
+
+	function EXP_GETCHANNELSNDNAME() {
+	}
+	EXP_GETCHANNELSNDNAME.prototype =
+	{
+	    evaluate: function (rhPtr) {
+	        rhPtr.rh4CurToken++;
+	        var value = rhPtr.get_ExpressionInt();
+	        rhPtr.rh4Results[rhPtr.rh4PosPile] = rhPtr.rhApp.soundPlayer.getSndNameChannel(value - 1);
+	    }
 	}
 	// CUT
 
@@ -15895,6 +16930,78 @@ window['Runtime'] = (function Runtime(__can, __path){
 	            return;
 	        }
 	        rhPtr.rh4Results[rhPtr.rh4PosPile] = pHo.hoOiList.oilName;
+	    }
+	}
+	// CUT
+
+	function EXP_NUMBEROFSELECTED() {
+	}
+	EXP_NUMBEROFSELECTED.prototype =
+	{
+	    evaluate: function (rhPtr) {
+	        var qoil = this.oiList;
+	        var poil;
+	        if ((qoil & 0x8000) == 0) {
+	            // Normal object
+	            poil = rhPtr.rhOiList[qoil];
+	            var noSelected = poil.oilNObjects;
+	            if (poil.oilNObjects > 0) {
+	                // Selected in current event?
+	                if (poil.oilEventCount == rhPtr.rhEvtProg.rh2EventCount) {
+	                    // Number of selected objects
+	                    noSelected = poil.oilNumOfSelected;
+	                    if (noSelected < 0)		// can this happen?
+	                        noSelected = 0;
+	                }
+	            }
+	            rhPtr.rh4Results[rhPtr.rh4PosPile] = noSelected;
+	        }
+	        else {
+	            var count = 0;
+	            if (qoil != -1) {
+	                var pqoi = rhPtr.rhEvtProg.qualToOiList[qoil & 0x7FFF];
+	                var qoi;
+	                for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2) {
+	                    var noil = pqoi.qoiList[qoi + 1];
+	                    if (noil < 0)
+	                        break;
+	                    poil = rhPtr.rhOiList[noil];
+	                    var noSelected = poil.oilNObjects;
+	                    if (poil.oilNObjects > 0) {
+	                        // Selected in current event?
+	                        if (poil.oilEventCount == rhPtr.rhEvtProg.rh2EventCount) {
+	                            // Number of selected objects
+	                            noSelected = poil.oilNumOfSelected;
+	                            if (noSelected < 0)		// can this happen?
+	                                noSelected = 0;
+	                        }
+	                    }
+	                    count += noSelected;
+	                }
+	            }
+	            rhPtr.rh4Results[rhPtr.rh4PosPile] = count;
+	        }
+	    }
+	}
+	// CUT
+
+	function EXP_EXTINSTANCEDATA() {
+	}
+	EXP_EXTINSTANCEDATA.prototype =
+	{
+	    evaluate: function (rhPtr) {
+	        var value = 0;
+	        var pHo = rhPtr.rhEvtProg.get_ExpressionObjects(this.oiList);
+	        if (pHo != null) {
+	            var hlo = pHo.hoHFII;
+	            if (hlo != -1) {
+	                var loPtr = rhPtr.rhFrame.LOList.getLOFromHandle(hlo);
+	                if (loPtr != null) {
+	                    value = loPtr.loValue;
+	                }
+	            }
+	        }
+	        rhPtr.rh4Results[rhPtr.rh4PosPile] = value;
 	    }
 	}
 	// CUT
@@ -20270,7 +21377,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.fadeTimerDelta = 0;
 		this.rhJoystickMask = 0xFF;
 		this.noResume = false;
-		this.quitPause = false;
+	    this.quitPause = false;
+	    this.rhLastCreatedObjectFixedValue = 0;
 	}
 	CRun.getObjectFont = function (hoPtr)
 	{
@@ -20615,7 +21723,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			this.rhEvtProg.assemblePrograms(this);
 
 			this.showMouse();
-			this.captureMouse();
+			//this.captureMouse();
 			this.rhQuitParam = 0;
 			this.f_InitLoop();
 			this.bodiesCreated = false;
@@ -20730,7 +21838,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 						this.f_InitLoop();
 						//				this.rhEvtProg.HandleKeyRepeat();
 						this.showMouse();
-						this.captureMouse();
+						//this.captureMouse();
 						quit = 0;
 						this.rhQuitParam = 0;
 						break;
@@ -20777,8 +21885,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 		prepareFrame: function ()
 		{
 			var oiPtr;
-			var ocPtr;
-			var n, type;
+			var type;
 
 			this.rhGameFlags |= CRun.GAMEFLAGS_LOADONCALL;
 			this.rhGameFlags |= CRun.GAMEFLAGS_INITIALISING;
@@ -20796,6 +21903,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 				{
 					this.rhOiList[count] = new CObjInfo();
 					this.rhOiList[count].copyData(oiPtr);
+	                this.rhOiList[count].oilIndex = count;
 
 					this.rhOiList[count].oilHFII = -1;
 					if (type == COI.OBJ_TEXT || type == COI.OBJ_QUEST)
@@ -20811,20 +21919,23 @@ window['Runtime'] = (function Runtime(__can, __path){
 					}
 					count++;
 
-					ocPtr = oiPtr.oiOC;
-					if ((ocPtr.ocOEFlags & CObjectCommon.OEFLAG_MOVEMENTS) != 0 && ocPtr.ocMovements != null)
-					{
-						for (n = 0; n < ocPtr.ocMovements.nMovements; n++)
-						{
-							var mvPtr = ocPtr.ocMovements.moveList[n];
-							if (mvPtr.mvType == CMoveDef.MVTYPE_MOUSE)
-							{
-								this.rhMouseUsed |= 1 << (mvPtr.mvControl - 1);
-							}
-						}
-					}
+					//var ocPtr = oiPtr.oiOC;
+					//if ((ocPtr.ocOEFlags & CObjectCommon.OEFLAG_MOVEMENTS) != 0 && ocPtr.ocMovements != null)
+					//{
+					//	for (var n = 0; n < ocPtr.ocMovements.nMovements; n++)
+					//	{
+					//		var mvPtr = ocPtr.ocMovements.moveList[n];
+					//		if (mvPtr.mvType == CMoveDef.MVTYPE_MOUSE)
+					//		{
+					//			this.rhMouseUsed |= 1 << (mvPtr.mvControl - 1);
+					//		}
+					//	}
+					//}
 				}
 			}
+
+	        // Build qualifier lists
+	        this.rhEvtProg.prepareQualifierList(this.rhOiList);
 
 			var i;
 			for (i = 0; i < this.rhFrame.nLayers; i++)
@@ -21021,6 +22132,47 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.setCursorCount(0);
 			}
 		},
+	    detectMouseMovement: function (pHoToExclude)
+	    {
+	        var newMouseUsed = 0;
+	        var nObject;
+	        var count = 0;
+	        for (nObject = 0; nObject < this.rhNObjects; nObject++) {
+	            while (this.rhObjectList[count] == null)
+	                count++;
+	            var pHo = this.rhObjectList[count];
+	            count++;
+	            if (pHo == pHoToExclude)
+	                continue;
+
+	            if (pHo.hoOEFlags & CObjectCommon.OEFLAG_MOVEMENTS) {
+	                var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
+	                if (mvPtr.mvType == CMoveDef.MVTYPE_MOUSE) {
+	                    newMouseUsed |= 1 << (mvPtr.mvControl - 1);
+	                }
+	            }
+	        }
+
+	        if (newMouseUsed != this.rhMouseUsed) {
+	            if (this.rhMouseUsed != 0)
+	                this.freeMouse();
+	            this.rhMouseUsed = newMouseUsed;
+	            if (this.rhMouseUsed != 0)
+	                this.captureMouse();
+	        }
+	    },
+	    onSetMouseMovement: function (pHo) {
+	        var oldMouseUsed = this.rhMouseUsed;
+	        if (pHo.hoOEFlags & CObjectCommon.OEFLAG_MOVEMENTS) {
+
+	            var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
+	            if (mvPtr.mvType == CMoveDef.MVTYPE_MOUSE) {
+	                this.rhMouseUsed |= 1 << (mvPtr.mvControl - 1);
+	                if (oldMouseUsed == 0)
+	                    this.captureMouse();
+	            }
+	        }
+	    },
 		setCursorCount: function (count)
 		{
 			if (count >= 0)
@@ -21344,6 +22496,78 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 				hoPtr.hoCommon = ocPtr;
 
+	            // Optimization qualifiers
+	            // Add object type to current qualifier to OIL list if not in already
+	            var oilPtr = hoPtr.hoOiList;
+	            if (oilPtr.oilRealQualifiers != null) {
+	                var oil = oilPtr.oilIndex;
+	                var rq;
+	                for (rq = 0; rq < oilPtr.oilRealQualifiers.length; rq++)
+	                {
+	                    var qualNum = oilPtr.oilRealQualifiers[rq];
+
+	                    // Check if OIL already in the qualToOiList list for this qualifier
+	                    var bIn = false;
+	                    var noi;
+	                    var currentOisPerQualifier = this.rhEvtProg.qualToOiList[qualNum];
+	                    var firstFreePos = currentOisPerQualifier.qoiList.length;
+	                    for (noi = 0; noi < firstFreePos; noi += 2) {
+	                        if (currentOisPerQualifier.qoiList[noi + 1] < 0) {
+	                            firstFreePos = noi;
+	                            break;
+	                        }
+	                        if (currentOisPerQualifier.qoiList[noi + 1] == oil) {
+	                            bIn = true;
+	                            break;
+	                        }
+	                    }
+	                    // Not in the list? add it
+	                    if (!bIn) {
+	                        var allOisPerQualifier = this.rhEvtProg.qualToOiListFull[qualNum];
+
+	                        // Find oil in allOisPerQualifier
+	                        var oilPos = -1;
+	                        for (noi = 0; noi < allOisPerQualifier.qoiList.length; noi += 2) {
+	                            if (allOisPerQualifier.qoiList[noi + 1] == oil) {
+	                                oilPos = noi;
+	                                break;
+	                            }
+	                        }
+	                        if (oilPos >= 0) {
+	                            var bAddToEnd = true;
+	                            if (currentOisPerQualifier.qoiList[0] >= 0) {
+	                                // Find insertion point (= position in currentOisPerQualifier of the first following OIs in allOisPerQualifier)
+	                                for (oilPos += 2; bAddToEnd && oilPos < allOisPerQualifier.qoiList.length; oilPos += 2) {
+	                                    var nextOil = allOisPerQualifier.qoiList[oilPos + 1];
+	                                    for (noi = 0; currentOisPerQualifier.qoiList[noi + 1] >= 0; noi += 2) {
+	                                        if (currentOisPerQualifier.qoiList[noi + 1] == nextOil) {
+	                                            // Insert oil here
+	                                            var noi2;
+	                                            for (noi2 = firstFreePos; noi2 > noi; noi2 -= 2) {
+	                                                currentOisPerQualifier.qoiList[noi2] = currentOisPerQualifier.qoiList[noi2 - 2];
+	                                                currentOisPerQualifier.qoiList[noi2 + 1] = currentOisPerQualifier.qoiList[noi2 - 1];
+	                                            }
+	                                            currentOisPerQualifier.qoiList[noi] = oi;
+	                                            currentOisPerQualifier.qoiList[noi + 1] = oil;
+	                                            bAddToEnd = false;
+	                                            break;
+	                                        }
+	                                    }
+	                                }
+	                            }
+	                            if (bAddToEnd) {
+	                                //noi = 0;
+	                                //while(currentOisPerQualifier.qoiList[noi] >= 0)
+	                                //	noi += 2;
+	                                currentOisPerQualifier.qoiList[firstFreePos] = oi;
+	                                currentOisPerQualifier.qoiList[firstFreePos + 1] = oil;
+	                            }
+	                        }
+	                    }
+	                }
+	            }
+				//
+
 			    // Sprite en mode inbitate?
 				if ((hoPtr.hoOEFlags & CObjectCommon.OEFLAG_MANUALSLEEP) == 0)
 				{
@@ -21442,7 +22666,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				}
 
 				if (this.rhLoopCount >= 1)
-					hoPtr.callComputeNewDisplay();
+	                hoPtr.callComputeNewDisplay();
+
+	            // Store fixed value of last created object
+	            this.rhLastCreatedObjectFixedValue = (hoPtr.hoCreationId << 16) | (hoPtr.hoNumber & 0xFFFF);
 
 				return numCreation;
 			}
@@ -21519,7 +22746,36 @@ window['Runtime'] = (function Runtime(__can, __path){
 								if (pHo.hoOiList.oilNObjects == 1)
 								{
 									this.rhEvtProg.handle_Event(pHo, (pHo.hoType | (-33 << 16)));
-								}
+
+	                                // Optimization qualifiers
+	                                // Remove object type from current qualifier to OIL list
+	                                var oilPtr = pHo.hoOiList;
+	                                if (oilPtr.oilRealQualifiers != null) {
+	                                    var oil = oilPtr.oilIndex;
+	                                    var rq;
+	                                    for (rq = 0; rq < oilPtr.oilRealQualifiers.length; rq++) {
+	                                        var qualNum = oilPtr.oilRealQualifiers[rq];
+
+	                                        // Check if OIL if in the qualToOiListReal list for this qualifier (it should)
+	                                        var noi;
+	                                        var currentOisPerQualifier = this.rhEvtProg.qualToOiList[qualNum];
+	                                        for (noi = 0; noi < currentOisPerQualifier.qoiList.length && currentOisPerQualifier.qoiList[noi] >= 0; noi += 2) {
+	                                            if (currentOisPerQualifier.qoiList[noi + 1] == oil) {
+	                                                for (; noi < (currentOisPerQualifier.qoiList.length - 2) && currentOisPerQualifier.qoiList[noi] >= 0; noi += 2) {
+	                                                    currentOisPerQualifier.qoiList[noi] = currentOisPerQualifier.qoiList[noi + 2];
+	                                                    currentOisPerQualifier.qoiList[noi + 1] = currentOisPerQualifier.qoiList[noi + 3];
+	                                                }
+	                                                if (noi < currentOisPerQualifier.qoiList.length) {
+	                                                    currentOisPerQualifier.qoiList[noi] = -1;
+	                                                    currentOisPerQualifier.qoiList[noi + 1] = -1;
+	                                                }
+	                                                break;
+	                                            }
+	                                        }
+	                                    }
+	                                }
+									//
+	                            }
 							}
 							this.f_KillObject(nob + count, false);
 							this.rhDestroyPos--;
@@ -21539,26 +22795,29 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 			var count = 0;
 			var nObject;
-			var hoPtr;
-			for (nObject = 0; nObject < this.rhNObjects; nObject++)
-			{
-				while (this.rhObjectList[count] == null)
-					count++;
-				hoPtr = this.rhObjectList[count];
-				count++;
+	        var hoPtr;
+	        if ((hoSource.hoFlags & CObject.HOF_SHOOTER) != 0)
+	        {
+			    for (nObject = 0; nObject < this.rhNObjects; nObject++)
+			    {
+				    while (this.rhObjectList[count] == null)
+					    count++;
+				    hoPtr = this.rhObjectList[count];
+				    count++;
 
-				if (hoPtr.rom != null)
-				{
-					if (hoPtr.roc.rcMovementType == CMoveDef.MVTYPE_BULLET)
-					{
-						var mBullet = hoPtr.rom.rmMovement;
-						if (mBullet.MBul_ShootObject == hoSource && mBullet.MBul_Wait == true)
-						{
-							mBullet.startBullet();
-						}
-					}
-				}
-			}
+				    if (hoPtr.rom != null)
+				    {
+					    if (hoPtr.roc.rcMovementType == CMoveDef.MVTYPE_BULLET)
+					    {
+						    var mBullet = hoPtr.rom.rmMovement;
+						    if (mBullet.MBul_ShootObject == hoSource && mBullet.MBul_Wait == true)
+						    {
+							    mBullet.startBullet();
+						    }
+					    }
+				    }
+			    }
+	        }
 		},
 
 		callComputeNewDisplay: function ()
@@ -21705,17 +22964,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 					var flag = false;
 					if (pHo.roc.rcMovementType == CMoveDef.MVTYPE_EXT)
 					{
-						var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
-						if (CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2d8directions')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspring')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspaceship')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dstatic')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dracecar')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2daxial')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dplatform')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbouncingball')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbackground')
-							)
+	                    var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
+	                    if (mvPtr.isPhysics)
 						{
 							pHo.rom.rmMovement.movement.CreateBody();
 							flag = true;
@@ -21737,16 +22987,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					if (pHo.roc.rcMovementType == CMoveDef.MVTYPE_EXT)
 					{
 						var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
-						if (CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2d8directions')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspring')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspaceship')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dstatic')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dracecar')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2daxial')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dplatform')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbouncingball')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbackground')
-							)
+	                    if (mvPtr.isPhysics)
 						{
 							pHo.rom.rmMovement.movement.CreateJoint();
 						}
@@ -21790,16 +23031,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					if (pHo.roc.rcMovementType == CMoveDef.MVTYPE_EXT)
 					{
 						var mvPtr = (pHo.hoCommon.ocMovements.moveList[pHo.rom.rmMvtNum]);
-						if (CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2d8directions')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspring')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dspaceship')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dstatic')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dracecar')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2daxial')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dplatform')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbouncingball')
-							|| CServices.compareStringsIgnoreCase(mvPtr.moduleName, 'box2dbackground')
-							)
+	                    if (mvPtr.isPhysics)
 						{
 							return pHo.rom.rmMovement.movement;
 						}
@@ -22491,7 +23723,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				var nOi = 0;
 				for (nOi = 0; nOi < pOiColList.length; nOi += 2)
 				{
-					var pOil = this.rhOiList[pOiColList[nOi + 1]];
+	                var nOIL = pOiColList[nOi + 1];
+	                if (nOIL < 0)
+	                    break;
+	                var pOil = this.rhOiList[nOIL];
 					var object = pOil.oilObject;
 					while ((object & 0x80000000) == 0)
 					{
@@ -23206,7 +24441,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var count = 0;
 			while (count < qoil.qoiList.length)
 			{
-				this.txtDisplay(pe, qoil.qoiList[count], txtNumber);
+	            var noi = qoil.qoiList[count];
+	            if (noi < 0)
+	                break;
+	            this.txtDisplay(pe, noi, txtNumber);
 				count += 2;
 			}
 			;
@@ -23411,34 +24649,16 @@ window['Runtime'] = (function Runtime(__can, __path){
 		        var bWrapVert = ((layer.dwOptions & CLayer.FLOPT_WRAP_VERT) != 0);
 
 		        if (bWrapHorz) {
-		            newLayerX %= this.rhFrame.leWidth;
+	                newLayerX %= this.rhFrame.leWidth;
+	                if (newLayerX < 0)
+	                    newLayerX += this.rhFrame.leWidth;
 		        }
 
 		        if (bWrapVert) {
-		            newLayerY %= this.rhFrame.leHeight;
+	                newLayerY %= this.rhFrame.leHeight;
+	                if (newLayerY < 0)
+	                    newLayerY += this.rhFrame.leHeight;
 		        }
-
-		        /*
-	            if (bWrapHorz) {
-	                if (newLayerX < 0) {
-	                    newLayerX = newLayerX % this.rhFrame.leWidth + this.rhFrame.leWidth;
-	                }
-
-	                if (newLayerX > this.rhFrame.leWidth) {
-	                    newLayerX = newLayerX % this.rhFrame.leWidth;
-	                }
-	            }
-
-	            if (bWrapVert) {
-	                if (newLayerY < 0) {
-	                    newLayerY = newLayerY % this.rhFrame.leHeight + this.rhFrame.leHeight;
-	                }
-
-	                if (newLayerY > this.rhFrame.leHeight) {
-	                    newLayerY = newLayerY % this.rhFrame.leHeight;
-	                }
-	            }
-	            */
 
 		        //update layer
 		        layer.x = newLayerX;
@@ -24019,6 +25239,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.oilName = null;
 		this.oilEventCountOR = 0;
 		this.oilColList = null;
+	    this.oilIndex = 0;
+	    this.oilRealQualifiers = null;
 	}
 	CObjInfo.prototype =
 	{
@@ -24045,6 +25267,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			this.oilQualifiers = new Array(8);
 			for (q = 0; q < 8; q++)
 				this.oilQualifiers[q] = ocPtr.ocQualifiers[q];
+	        this.oilRealQualifiers = null;
 		}
 	}
 
@@ -24758,7 +25981,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 						this.raRoutineAnimation = 2;
 						this.animation_Force(CAnim.ANIMID_DISAPPEAR);
 						this.animation_OneLoop();
-						this.animations();
+	                    this.animations();
 					}
 				}
 			}
@@ -25014,7 +26237,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				return false;
 			}
-			if (bAngle == false && this.raAnimNumberOfFrame == 0)
+	        if (bAngle == false && this.raAnimNumberOfFrame == 0 && anim != CAnim.ANIMID_DISAPPEAR)
 			{
 				return false;
 			}
@@ -25091,7 +26314,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 							this.raAnimRepeat--;
 							if (this.raAnimRepeat == 0)
 							{
-								this.raAnimFrame = this.raAnimNumberOfFrame-1;
+	                            this.raAnimFrame = this.raAnimNumberOfFrame - 1;
+	                            if (this.raAnimFrame < 0)
+	                                this.raAnimFrame = 0;
 								this.raAnimNumberOfFrame = 0;
 								if (this.raAnimForced != 0)
 								{
@@ -25900,6 +27125,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 	// CImage Object
 	// ----------------------------------------------------------------------------
 	CImage.maxRotatedMasks = 10;
+	CImage.IMAGEFLAG_OPAQUEFORCOLLISIONS = 1;
 	function CImage()
 	{
 		this.app = null;
@@ -25920,7 +27146,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.mosaicX = 0;
 		this.mosaicY = 0;
 		this.texID = -1;
-		this.texCoords = null;
+	    this.texCoords = null;
+	    this.iflags = 0;
 	}
 	CImage.createFromFile = function (application, fileName)
 	{
@@ -26039,8 +27266,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				if (this.maskNormal == null)
 				{
-					this.maskNormal = new CMask();
-					this.maskNormal.createMask(this.app, this, flags);
+	                this.maskNormal = new CMask();
+	                if (this.iflags & CImage.IMAGEFLAG_OPAQUEFORCOLLISIONS)
+	                    this.maskNormal.createOpaqueMask(this.app, this, flags);
+	                else
+		    			this.maskNormal.createMask(this.app, this, flags);
 				}
 				if (angle == 0 && scaleX == 1.0 && scaleY == 1.0)
 				{
@@ -26096,10 +27326,16 @@ window['Runtime'] = (function Runtime(__can, __path){
 					if (this.maskNormal == null)
 					{
 						this.maskNormal = new CMask();
-						this.maskNormal.createMask(this.app, this, 0);
+	                    if (this.iflags & CImage.IMAGEFLAG_OPAQUEFORCOLLISIONS)
+	                        this.maskNormal.createOpaqueMask(this.app, this, 0);
+	                    else
+						    this.maskNormal.createMask(this.app, this, 0);
 					}
 					this.maskPlatform = new CMask();
-					this.maskPlatform.createMask(this.app, this, flags);
+	                if (this.iflags & CImage.IMAGEFLAG_OPAQUEFORCOLLISIONS)
+	                    this.maskPlatform.createOpaqueMask(this.app, this, flags);
+	                else
+					    this.maskPlatform.createMask(this.app, this, flags);
 				}
 				return this.maskPlatform;
 			}
@@ -26653,7 +27889,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.bPlaying = false;
 		this.frequency = 0;
 		this.response = null;
-		this.gain = null;
+	    this.gain = null;
+	    this.volume = 100;
 	}
 	CSound.prototype =
 	{
@@ -27074,17 +28311,15 @@ window['Runtime'] = (function Runtime(__can, __path){
 		}
 	}
 
-	function SaveSelection(poil) {
-	    this.poil = poil;
-	    this.selectedInstances = new Array();
-	}
-	SaveSelection.prototype =
-	{
-	}
-
 	// CEventProgram
 	//////////////////////////////////////////////////////////////////////////////
 	CEventProgram.EVENTS_EXTBASE = 80;
+	CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_FIRST = 52;								// 1-based index of first available common condition
+	CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST = CEventProgram.EVENTS_EXTBASE;	// 1-based index of last common condition
+	CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_MAXNUMBER = (CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST + 1 - CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_FIRST);
+	CEventProgram.NUMBER_OF_ACTIVEOBJECT_CONDITIONS = 4;
+	CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST_ONLYACTIVEOBJECTS = 199 + CEventProgram.EVENTS_EXTBASE;
+	CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_MAXNUMBER_ONLYACTIVEOBJECTS = (CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST_ONLYACTIVEOBJECTS + 1 - CEventProgram.NUMBER_OF_ACTIVEOBJECT_CONDITIONS - CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_FIRST);
 	CEventProgram.PARAMCLICK_DOUBLE = 0x100;
 	CEventProgram.EVENTOPTION_BREAKCHILD = 0x0001;
 	CEventProgram.bts = function (array, index)
@@ -27130,6 +28365,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.qualifiers = null;
 		this.events = null;
 		this.qualToOiList = null;
+		this.qualToOiListFull = null;
 		this.listPointers = null;
 		this.eventPointersGroup = null;
 		this.eventPointersCnd = null;
@@ -27181,7 +28417,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.complexOnLoop = false;
 		this.childEventParam = null;
 		this.childEventSelectionStack = new Array();
-		this.defaultEvgFlagsMask = CEventGroup.EVGFLAGS_DEFAULTMASK;
+	    this.defaultEvgFlagsMask = CEventGroup.EVGFLAGS_DEFAULTMASK;
+	    this.onEachLoopConditionIndexes = null;
+	    this.onEachLoopConditionIndexesActives = null;
+	    this.allOnEachLoopsAreOptimized = false;
 	}
 	CEventProgram.prototype =
 	{
@@ -27226,7 +28465,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			do
 			{
 				oilPtr = this.rhPtr.rhOiList[oil2];
-				if (oilPtr.oilType == nType)
+				if ((nType != -1 && oilPtr.oilType == nType) || nType == -1)
 				{
 					if ((oilPtr.oilListSelected & 0x80000000) == 0)
 					{
@@ -27248,6 +28487,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		{
 			var pHo = this.rh2EventPos;
 			var oilPtr;
+
+		    // This part is not in the Windows runtime. If pHo is null in this routine, then probably there is a bug somewhere else?
 			if (pHo == null)
 			{
 				oilPtr = this.rhPtr.rhOiList[this.rh2EventPosOiList];
@@ -27260,6 +28501,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					return pHo;
 				}
 			}
+	        //
 			if (pHo != null)
 			{
 				if ((pHo.hoNextSelected & 0x80000000) == 0)
@@ -27267,23 +28509,23 @@ window['Runtime'] = (function Runtime(__can, __path){
 					this.rh2EventPrev = pHo;
 					this.rh2EventPrevOiList = null;
 					pHo = this.rhPtr.rhObjectList[pHo.hoNextSelected];
-					this.rh2EventPos = pHo;
+				    this.rh2EventPos = pHo;
 					return pHo;
 				}
 			}
 
 			var oil = this.rh2EventPosOiList;
-			var nType = this.rhPtr.rhOiList[oil].oilType;
 			oil++;
 			while (oil < this.rhPtr.rhMaxOI)
 			{
-				if ((this.rh2EventType != -1 && this.rhPtr.rhOiList[oil].oilType == nType) || this.rh2EventType == -1)
+			    var poil = this.rhPtr.rhOiList[oil];
+			    if ((this.rh2EventType != -1 && poil.oilType == this.rh2EventType) || this.rh2EventType == -1)
 				{
-					if ((this.rhPtr.rhOiList[oil].oilListSelected & 0x80000000) == 0)
+					if ((poil.oilListSelected & 0x80000000) == 0)
 					{
-						pHo = this.rhPtr.rhObjectList[this.rhPtr.rhOiList[oil].oilListSelected];
+						pHo = this.rhPtr.rhObjectList[poil.oilListSelected];
 						this.rh2EventPrev = null;
-						this.rh2EventPrevOiList = this.rhPtr.rhOiList[oil];
+						this.rh2EventPrevOiList = poil;
 						this.rh2EventPos = pHo;
 						this.rh2EventPosOiList = oil;
 						return pHo;
@@ -27329,6 +28571,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 							do
 							{
 								pHo = this.rhPtr.rhObjectList[num];
+								if (pHo == null)
+									return null;
 								pHo.hoNextSelected = pHo.hoNumNext;
 								num = pHo.hoNumNext;
 							}
@@ -27353,6 +28597,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 
 			pHo = this.rhPtr.rhObjectList[first];
+			if (pHo == null)
+			    return null;
 			this.rh2EventPos = pHo;
 			return pHo;
 		},
@@ -27440,6 +28686,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			while (qoi < pQoi.qoiList.length)
 			{
 				qoiList = pQoi.qoiList[qoi + 1];
+	            if (qoiList < 0)
+	                break;
 				oilPtr = this.rhPtr.rhOiList[qoiList];
 				if (oilPtr.oilEventCount == this.rh2EventCount)
 				{
@@ -27548,7 +28796,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 				{
 					return null;
 				}
-				oilPtr = this.rhPtr.rhOiList[this.rh2EventQualPos.qoiList[this.rh2EventQualPosNum + 1]];
+	            var noil = this.rh2EventQualPos.qoiList[this.rh2EventQualPosNum + 1];
+	            if (noil < 0) {
+	                return null;
+	            }
+				oilPtr = this.rhPtr.rhOiList[noil];
 			} while ((oilPtr.oilListSelected & 0x80000000) != 0);
 
 			this.rh2EventPrev = null;
@@ -27562,34 +28814,39 @@ window['Runtime'] = (function Runtime(__can, __path){
 		evt_AddCurrentQualifier: function (qual)
 		{
 			var pQoi = this.qualToOiList[qual & 0x7FFF];
-			var noil = 0;
+	        var nq = 0;
 			var oilPtr;
-			while (noil < pQoi.qoiList.length)
+	        while (nq < pQoi.qoiList.length)
 			{
-				oilPtr = this.rhPtr.rhOiList[pQoi.qoiList[noil + 1]];
+	            var noil = pQoi.qoiList[nq + 1];
+	            if (noil < 0)
+	                break;
+	            oilPtr = this.rhPtr.rhOiList[noil];
 				if (oilPtr.oilEventCount != this.rh2EventCount)
 				{
 					oilPtr.oilEventCount = this.rh2EventCount;
 					oilPtr.oilNumOfSelected = 0;
 					oilPtr.oilListSelected = -1;
 				}
-				noil += 2;
+	            nq += 2;
 			}
-			;
 		},
 
 		evt_DeleteCurrentQualifier: function (qual)
 		{
 		    var pQoi = this.qualToOiList[qual & 0x7FFF];
-		    var noil = 0;
+	        var nq = 0;
 		    var oilPtr;
-		    while (noil < pQoi.qoiList.length)
+	        while (nq < pQoi.qoiList.length)
 		    {
-		        oilPtr = this.rhPtr.rhOiList[pQoi.qoiList[noil + 1]];
+	            var noil = pQoi.qoiList[nq + 1];
+	            if (noil < 0)
+	                break;
+	            oilPtr = this.rhPtr.rhOiList[noil];
 		        oilPtr.oilEventCount = this.rh2EventCount;
 	            oilPtr.oilNumOfSelected = 0;
 	            oilPtr.oilListSelected = -1;
-		        noil += 2;
+	            nq += 2;
 		    }
 		},
 
@@ -27672,7 +28929,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 				var qoi;
 				for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 				{
-					this.deselectThem(pqoi.qoiList[qoi + 1]);
+	                var noil = pqoi.qoiList[qoi + 1];
+	                if (noil < 0)
+	                    break;
+					this.deselectThem(noil);
 				}
 			}
 			pHo.hoNextSelected = -1;
@@ -27833,7 +29093,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 			do
 			{
-				oilPtr = this.rhPtr.rhOiList[pQoi.qoiList[qoi + 1]];
+	            var noil = pQoi.qoiList[qoi + 1];
+	            if (noil < 0)
+	                break;
+				oilPtr = this.rhPtr.rhOiList[noil];
 				if (oilPtr.oilEventCount == this.rh2EventCount)
 				{
 					if ((oilPtr.oilListSelected & 0x80000000) == 0)
@@ -27847,7 +29110,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			qoi = 0;
 			do
 			{
-				oilPtr = this.rhPtr.rhOiList[pQoi.qoiList[qoi + 1]];
+	            var noil = pQoi.qoiList[qoi + 1];
+	            if (noil < 0)
+	                break;
+				oilPtr = this.rhPtr.rhOiList[noil];
 				if ((oilPtr.oilObject & 0x80000000) == 0)
 				{
 					return this.rhPtr.rhObjectList[oilPtr.oilObject];
@@ -28193,6 +29459,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			while (pos < pqoi.qoiList.length)
 			{
 				qoil = pqoi.qoiList[pos + 1];
+	            if (qoil < 0)
+	                break;
 				oilPtr = this.rhPtr.rhOiList[qoil];
 				if (oilPtr.oilEventCount == this.rh2EventCount)
 				{
@@ -28223,6 +29491,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 			while (pos < pqoi.qoiList.length)
 			{
 				qoil = pqoi.qoiList[pos + 1];
+	            if (qoil < 0)
+	                break;
 				oilPtr = this.rhPtr.rhOiList[qoil];
 				if ((oilPtr.oilObject & 0x80000000) == 0)
 				{
@@ -28270,7 +29540,38 @@ window['Runtime'] = (function Runtime(__can, __path){
 				if (pForEach == null)
 					break;
 
-				pForEach.stop = false;
+	            // Optimization
+	            var nCondition = (-41 << 16);	// CNDL_EXTONLOOP;
+	            var nCondition2 = (-41 << 16);	// CNDL_EXTONLOOP;
+	            var conditionIndexMap = null;
+	            if (pForEach.number > 0) {
+	                var pHo = pForEach.objects[0];
+	                conditionIndexMap = (pHo.hoType == COI.OBJ_SPR) ? this.onEachLoopConditionIndexesActives : this.onEachLoopConditionIndexes;
+	            }
+	            if (conditionIndexMap != null)
+	            {
+	                var idxValue = conditionIndexMap.get(pForEach.name);
+	                if (idxValue != undefined)
+	                    nCondition = -idxValue * 65536;
+	                if (pForEach2 != null)
+	                {
+	                    conditionIndexMap = null;
+	                    if (pForEach2.number > 0)
+	                    {
+	                        var pHo2 = pForEach2.objects[0];
+	                        conditionIndexMap = (pHo2.hoType == COI.OBJ_SPR) ? this.onEachLoopConditionIndexesActives : this.onEachLoopConditionIndexes;
+	                    }
+	                    if (conditionIndexMap != null)
+	                    {
+	                        idxValue = conditionIndexMap.get(pForEach2.name);
+	                        if (idxValue != undefined)
+	                            nCondition2 = -idxValue * 65536;
+	                    }
+	                }
+	            }
+	            //
+
+	            pForEach.stop = false;
 				for (pForEach.index = 0; pForEach.index < pForEach.number; pForEach.index++)
 				{
 					this.rhPtr.rh4CurrentForEach = pForEach;
@@ -28278,7 +29579,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					if (pForEach2)
 						pForEach2.index = pForEach.index;
 					this.rh2ActionOn = 0;
-					this.handle_Event(pForEach.objects[pForEach.index], (-41 << 16));    // CNDL_EXTONLOOP);
+	                this.handle_Event(pForEach.objects[pForEach.index], nCondition);    // CNDL_EXTONLOOP);
 					if (pForEach.stop)
 						break;
 				}
@@ -28291,7 +29592,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 						if (pForEach)
 							pForEach.index = pForEach2.index;
 						this.rh2ActionOn = 0;
-						this.handle_Event(pForEach2.objects[pForEach2.index], (-41 << 16));    // CNDL_EXTONLOOP);
+	                    this.handle_Event(pForEach2.objects[pForEach2.index], nCondition2);    // CNDL_EXTONLOOP);
 						if (pForEach2.stop)
 							break;
 					}
@@ -28332,109 +29633,166 @@ window['Runtime'] = (function Runtime(__can, __path){
 			pForEach.oi = oi;
 			pForEach.objects[0] = pHo;
 			pForEach.index = -1;
-			pForEach.name = pName;
+	        pForEach.name = pName.toLowerCase();
 		},
 
-		evt_SaveSelectedObjects: function (oiOilList, selectedObjects) {     // oiOilList = array of (oi,oil) pairs, selectedObjects = array of SaveSelection
-		    for (var n = 0; n < oiOilList.length; n += 2) {
-		        var oil = oiOilList[n + 1];
-		        var poil = this.rhPtr.rhOiList[oil];
+	    // oiOilList[], Map < CObjInfo, selected_ois[] > selectedObjects
+	    evt_SaveSelectedObjects: function (oiOilList, selectedObjects)
+	    {
+	        for (var n = 0; n < oiOilList.length; n += 2)
+	        {
+	            var oil = oiOilList[n + 1];
+	            var poil = this.rhPtr.rhOiList[oil];
 
-		        // Selected?
-		        if (poil.oilEventCount == this.rh2EventCount) {
-		            // Already in the list? 
-		            var j;
-		            for (j = 0; j < selectedObjects.length; j++) {
-		                if (selectedObjects[j].poil == poil)
-		                    break;
-		            }
+	            // Selected?
+	            if (poil.oilEventCount == this.rh2EventCount) {
+	                // Already in the list?
+	                var selectedInstances = selectedObjects.get(poil);
+	                if (selectedInstances != undefined)
+	                    selectedInstances.length = 0;
+	                else {
+	                    selectedInstances = new Array();
+	                    selectedObjects.set(poil, selectedInstances);
+	                }
 
-		            var pSel;       // saveSelection
-		            if (j < selectedObjects.length) {
-		                // In the list already => replace selection
-		                pSel = selectedObjects[j];
-		                pSel.selectedInstances.length = 0;
-		            }
-		            else {
-		                // Not in the list yet, add new selection
-		                pSel = new SaveSelection(poil);
-		                selectedObjects.push(pSel);
-		            }
+	                // Store selected objects
+	                var num = poil.oilListSelected;
+	                while (num >= 0) {
+	                    var pHoFound = this.rhPtr.rhObjectList[num];
+	                    if (pHoFound == null)
+	                        break;
+	                    if ((pHoFound.hoFlags & CObject.HOF_DESTROYED) == 0)
+	                        selectedInstances.push(num);
+	                    num = pHoFound.hoNextSelected;
+	                }
+	            }
+	        }
+	    },
 
-		            // Store selected objects
-		            var num = poil.oilListSelected;
-		            while (num >= 0) {
-		                var pHoFound = this.rhPtr.rhObjectList[num];
-		                if (pHoFound == null)
-		                    break;
-		                if ((pHoFound.hoFlags & CObject.HOF_DESTROYED) == 0)
-		                    pSel.selectedInstances.push(num);
-		                num = pHoFound.hoNextSelected;
-		            }
-		        }
-		    }
-		},
+	    // oiOilList[], Map < CObjInfo, selected_ois[] > selectedObjects
+	    evt_RestoreSelectedObjects: function (oiOilList, selectedObjects)
+	    {
+	        for (var n = 0; n < oiOilList.length; n += 2)
+	        {
+	            var oil = oiOilList[n + 1];
+	            var poil = this.rhPtr.rhOiList[oil];
 
-		evt_RestoreSelectedObjects: function (oiOilList, selectedObjects) {     // oiOilList = array of (oi,oil) pairs, selectedObjects = array of SaveSelection
-		    for (var n = 0; n < oiOilList.length; n += 2) {
-		        var oil = oiOilList[n + 1];
-		        var poil = this.rhPtr.rhOiList[oil];
+	            var selectedInstances = selectedObjects.get(poil);
+	            if (selectedInstances != undefined) {
+	                var selectedInstancesSize = selectedInstances.length;
+	                poil.oilEventCount = this.rh2EventCount;
+	                poil.oilListSelected = -1;
+	                poil.oilNumOfSelected = 0;
+	                if (selectedInstancesSize > 0) {
+	                    var pHoPrev = this.rhPtr.rhObjectList[selectedInstances[0]];
+	                    if (pHoPrev != null) {
+	                        poil.oilListSelected = selectedInstances[0];
+	                        poil.oilNumOfSelected++;
+	                        for (var j = 1; j < selectedInstancesSize; j++)
+	                        {
+	                            var num = selectedInstances[j];
+	                            var pHo = this.rhPtr.rhObjectList[num];
+	                            if (pHo == null)
+	                                break;
+	                            if ((pHo.hoFlags & CObject.HOF_DESTROYED) == 0) {
+	                                pHoPrev.hoNextSelected = num;
+	                                poil.oilNumOfSelected++;
+	                            }
+	                            pHoPrev = pHo;
+	                        }
+	                        pHoPrev.hoNextSelected = -1;
+	                    }
+	                }
+	            }
+	        }
+	    },
 
-		        for (var i = 0; i < selectedObjects.length; i++) {
-		            var sel = selectedObjects[i];
-		            if (sel.poil == poil) {
-		                poil.oilEventCount = this.rh2EventCount;        // TODO: SetObjectEventCount(pRh, poil);
-		                poil.oilListSelected = -1;
-		                poil.oilNumOfSelected = 0;
-		                if (sel.selectedInstances.length > 0) {
-		                    var pHoPrev = this.rhPtr.rhObjectList[sel.selectedInstances[0]];
-		                    if (pHoPrev != null) {
-		                        poil.oilListSelected = sel.selectedInstances[0];
-		                        poil.oilNumOfSelected++;
-		                        for (var j = 1; j < sel.selectedInstances.length; j++) {
-		                            var num = sel.selectedInstances[j];
-		                            var pHo = this.rhPtr.rhObjectList[num];
-		                            if (pHo == null)
-		                                break;
-		                            if ((pHo.hoFlags & CObject.HOF_DESTROYED) == 0) {
-		                                pHoPrev.hoNextSelected = num;
-		                                poil.oilNumOfSelected++;
-		                            }
-		                            pHoPrev = pHo;
-		                        }
-		                        pHoPrev.hoNextSelected = -1;
-		                    }
-		                }
-		            }
-		        }
-		    }
-		},
+	    evt_DeselectObject: function (oil) {
+	        var evtCount = this.rh2EventCount;
 
-		executeChildEvents: function (eventParam) {
-		    // Save object selection and push to stack
-		    var newIdx = this.childEventSelectionStack.length;
-		    var selectedObjects = new Array();      // array of SaveSelection
-		    if (newIdx > 0) {
+	        // Unselect all objects for this oil
+	        if ((oil & 0x8000) == 0) {
+	            // Notmal object
+	            var poil = this.rhPtr.rhOiList[oil];
+	            poil.oilEventCount = evtCount;
+	            poil.oilListSelected = -1;
+	            poil.oilNumOfSelected = 0;
+	        }
+	        else {
+	            if (oil == 0xFFFF)
+	                return;
+	            // Qualifier
+	            var pqoi = this.qualToOiList[oil & 0x7FFF];
+	            var qoi;
+	            for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2) {
+	                var oilq = pqoi.qoiList[qoi + 1];
+	                if (oilq < 0)
+	                    break;
+	                var poil = this.rhPtr.rhOiList[oilq];
+	                poil.oilEventCount = evtCount;
+	                poil.oilListSelected = -1;
+	                poil.oilNumOfSelected = 0;
+	            }
+	        }
+	    },
+
+	    // Select a list of object instances
+	    evt_SelectObjects: function (commonOil, hOList) {
+
+	        // Qualifier? unselect all objects (as the list may not contain objects from all OIs referenced by the qualifier)
+	        // (no need to do this for normal objects as it's done below)
+	        if ((commonOil & 0x8000) != 0)
+	            this.evt_DeselectObject(commonOil);
+
+	        // Select objects from list
+	        // Note: objects are grouped by OIL (= for example you can't have object1_oil1, object7_oil2, object4_oil1)
+	        var oilLast = -1;
+	        var pHoLast = null;
+	        var index;
+	        for (index = 0; index < hOList.size(); index++) {
+	            var pHo = hOList.get(index);
+	            var poil = pHo.hoOiList;
+	            var oil = poil.oilindex
+	            if (oil != oilLast) {
+	                oilLast = oil;
+	                poil.oilEventCount = this.rh2EventCount;
+	                poil.oilListSelected = pHo.hoNumber;
+	                poil.oilNumOfSelected = 1;
+	                pHo.hoNextSelected = -1;
+	                pHoLast = pHo;
+	            }
+	            else {
+	                poil.oilNumOfSelected++;
+	                pHoLast.hoNextSelected = pHo.hoNumber;
+	                pHo.hoNextSelected = -1;
+	                pHoLast = pHo;
+	            }
+	        }
+	    },
+
+	    executeChildEvents: function (eventParam) {
+
+	        // Save object selection and push to stack
+	        var newIdx = this.childEventSelectionStack.length;
+	        var selectedObjects = new Map();
+	        if (newIdx > 0) {
 	            // Copy previous selection
-		        var prevSelectedObjects = this.childEventSelectionStack[newIdx - 1];
-		        for (var n = 0; n < prevSelectedObjects.length; n++) {
-		            var prevSel = prevSelectedObjects[n];
-		            var newSel = new SaveSelection(prevSel.poil);
-		            for (var j = 0; j < prevSel.selectedInstances.length; j++) {
-		                newSel.selectedInstances.push(prevSel.selectedInstances[j]);
-		            }
-		            selectedObjects.push(newSel);
-		        }
-		    }
-		    this.evt_SaveSelectedObjects(eventParam.ois, selectedObjects);
-		    this.childEventSelectionStack.push(selectedObjects);
+	            var prevSelectedObjects = this.childEventSelectionStack[newIdx - 1];
+	            for (const poil of prevSelectedObjects.keys()) {
+	                var selectedInstances = prevSelectedObjects.get(poil).slice();
+	                selectedObjects.set(poil, selectedInstances);
+	            }
+	        }
 
-		    // Execute child events (only "ALWAYS" events)
-		    this.computeEventList(eventParam.evgOffsetList, null);
+	        this.evt_SaveSelectedObjects(eventParam.ois, selectedObjects);
+	        this.childEventSelectionStack.push(selectedObjects);
 
-		    // Remove object selection from stack
-		    this.childEventSelectionStack.pop();
-		},
+	        // Execute child events (only "ALWAYS" events)
+	        this.computeEventList(eventParam.evgOffsetList, null);
+
+	        // Remove object selection from stack
+	        this.childEventSelectionStack.pop();
+	    },
 
 		handle_GlobalEvents: function (code)
 		{
@@ -29001,7 +30359,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 							numOi = 0;
 							while (numOi < pq.qoiList.length)
 							{
-								if (pq.qoiList[numOi] == oi)
+	                            var nqoi = pq.qoiList[numOi];
+	                            if (nqoi < 0)
+	                                break;
+	                            if (nqoi == oi)
 								{
 									actPtr.execute(this.rhPtr);
 									break;
@@ -29047,12 +30408,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 		onMouseButton: function (b, nClicks)
 		{
 			var mouse;
-			this.rhPtr.getMouseCoords();
-
 			if (this.rhPtr == null)
 			{
 				return;
 			}
+	        this.rhPtr.getMouseCoords();
 			if (this.rhPtr.rh2PauseCompteur != 0)
 			{
 				return;
@@ -29186,7 +30546,22 @@ window['Runtime'] = (function Runtime(__can, __path){
 				return false;
 			}
 			return true;
-		},
+	    },
+
+	    updateZoneCoordinates: function (params, n)
+	    {
+	        var p = params[n];
+	        if (p.code == 72)       // PARAM_ZONE_EXPRESSION
+	        {
+	            p.x1 = this.rhPtr.get_EventExpressionAny(params[n+1]);
+	            p.y1 = this.rhPtr.get_EventExpressionAny(params[n+2]);
+	            p.x2 = this.rhPtr.get_EventExpressionAny(params[n+3]);
+	            p.y2 = this.rhPtr.get_EventExpressionAny(params[n+4]);
+	            return 5;
+	        }
+	        else
+	            return 1;
+	    },
 
 		count_ZoneTypeObjects: function (pZone, stop, type)
 		{
@@ -29691,7 +31066,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var count = 0;
 			for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 			{
-				count += this.czoCountThem(pqoi.qoiList[qoi + 1], pZone);
+	            var noil = pqoi.qoiList[qoi + 1];
+	            if (noil < 0)
+	                break;
+	            count += this.czoCountThem(noil, pZone);
 			}
 			return count;
 		},
@@ -29769,7 +31147,10 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var qoi;
 			for (qoi = 0; qoi < pqoi.qoiList.length; qoi += 2)
 			{
-				var pHo = this.countThem(pqoi.qoiList[qoi + 1], stop);
+	            var noil = pqoi.qoiList[qoi + 1];
+	            if (noil < 0)
+	                break;
+	            var pHo = this.countThem(noil, stop);
 				if (pHo != null)
 				{
 					return pHo;
@@ -29889,6 +31270,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 					{
 						this.nConditions[n] = app.file.readAShort();
 					}
+	                if (this.nConditions[COI.NUMBEROF_SYSTEMTYPES + COI.OBJ_SPR] < CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST_ONLYACTIVEOBJECTS + 1)
+	                    this.nConditions[COI.NUMBEROF_SYSTEMTYPES + COI.OBJ_SPR] = CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_LAST_ONLYACTIVEOBJECTS + 1;
 					this.nQualifiers = app.file.readAShort();
 					if (this.nQualifiers > 0)
 					{
@@ -30085,7 +31468,105 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 		},
 
-		assemblePrograms: function (run)
+		// Create OI list per qualifier (CQualToOiList qualToOiList)
+		// Note: each CQualToOiList contains:
+		//	- variables for event object selection
+		//	- list of objects (OI index and OIList index) that have this qualifier (same type and qualifier number)
+	    prepareQualifierList: function (oiList)
+		{
+	        qualToOiList = null;
+			qualToOiListFull = null;
+	        if (this.nQualifiers > 0)
+	        {
+				var n;
+	            var q;
+	            var oil;
+	            var qualifierNumber;
+	            var count = new Array(this.nQualifiers);
+	            var nOi;
+	            for (oil = 0; oil < oiList.length; oil++) {
+	                oiList[oil].oilEventCount = 0;
+	                oiList[oil].oilRealQualifiers = null;
+	            }
+	            for (q = 0; q < this.nQualifiers; q++)
+	            {
+	                qualifierNumber = (this.qualifiers[q].qOi & 0x7FFF);
+	                count[q] = 0;
+
+	                for (oil = 0; oil < oiList.length; oil++)
+	                {
+	                    var oilPtr = oiList[oil];
+	                    if (oilPtr.oilType == this.qualifiers[q].qType)
+	                    {
+	                        for (n = 0; n < 8 && oilPtr.oilQualifiers[n] != -1; n++)      // MAX_QUALIFIERS
+	                        {
+	                            if (qualifierNumber == oilPtr.oilQualifiers[n])
+	                            {
+	                                count[q]++;
+									oilPtr.oilEventCount++;
+	                                break;
+	                            }
+	                        }
+	                    }
+	                }
+	            }
+
+	            this.qualToOiList = new Array(this.nQualifiers);
+	            this.qualToOiListFull = new Array(this.nQualifiers);
+	            for (q = 0; q < this.nQualifiers; q++)
+	            {
+	                this.qualToOiList[q] = new CQualToOiList();
+	                this.qualToOiListFull[q] = new CQualToOiList();
+
+					var cnt = count[q];
+	                if (cnt != 0)
+	                {
+	                    this.qualToOiList[q].qoiList = new Array(cnt * 2);
+	                    this.qualToOiListFull[q].qoiList = new Array(cnt * 2);
+	                }
+
+	                var i = 0;
+	                qualifierNumber = (this.qualifiers[q].qOi & 0x7FFF);
+	                for (oil = 0; oil < oiList.length; oil++)
+	                {
+	                    var oilPtr = oiList[oil];
+	                    if (oilPtr.oilType == this.qualifiers[q].qType)
+	                    {
+	                        for (n = 0; n < 8 && oilPtr.oilQualifiers[n] != -1; n++)
+	                        {
+	                            if (qualifierNumber == oilPtr.oilQualifiers[n])
+	                            {
+	                                this.qualToOiListFull[q].qoiList[i * 2] = oilPtr.oilOi;
+	                                this.qualToOiListFull[q].qoiList[i * 2 + 1] = oil;
+	                                this.qualToOiList[q].qoiList[i * 2] = -1;
+	                                this.qualToOiList[q].qoiList[i * 2 + 1] = -1;
+									if (oilPtr.oilRealQualifiers == null)
+									{
+										if (oilPtr.oilEventCount != 0)
+										{
+	                                        oilPtr.oilRealQualifiers = new Array(oilPtr.oilEventCount);
+											oilPtr.oilEventCount = 0;
+										}
+									}
+									if (oilPtr.oilRealQualifiers != null)
+										oilPtr.oilRealQualifiers[oilPtr.oilEventCount++] = q;
+	                                i++;
+	                                break;
+	                            }
+	                        }
+	                    }
+	                }
+	                this.qualToOiList[q].qoiActionCount = -1;
+	                this.qualToOiListFull[q].qoiActionCount = -1;
+	            }
+
+	            for (oil = 0; oil < oiList.length; oil++) {
+	                oiList[oil].oilEventCount = 0;
+	            }
+	        }
+		},
+
+	assemblePrograms: function (run)
 		{
 			var evgPtr;
 			var evtPtr;
@@ -30124,7 +31605,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					}
 				}
 			}
-
+	/*
 			this.qualToOiList = null;
 			var oil;
 			if (this.nQualifiers > 0)
@@ -30179,7 +31660,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					this.qualToOiList[q].qoiActionCount = -1;
 				}
 			}
-
+	*/
 			this.colBuffer = new Array(oiMax * 100 * 2 + 1);
 			var colList = 0;
 			var posStartLoop = new Array();
@@ -30200,8 +31681,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 					}
 
 					if (evtPtr.evtCode == CAct.ACT_STARTLOOP)
-					{
-						var expression = evtPtr.evtParams[0];
+	                {
+	                    var expression = evtPtr.evtParams[0];
+	                    expression.fastFastLoop = 0;
 						if (expression.tokens[0].code == CExp.EXP_STRING && expression.tokens[1].code == 0)
 						{
 							var posStart = {};
@@ -30358,6 +31840,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 								var pEvpObject = evtPtr.evtParams[0];
 								this.addColList(evtPtr.evtOiList, evtPtr.evtOi, pEvpObject.oiList, pEvpObject.oi);
 								this.addColList(pEvpObject.oiList, pEvpObject.oi, evtPtr.evtOiList, evtPtr.evtOi);
+
 								// L'objet 1 est-il un sprite?
 								type1 = CEventProgram.EVTTYPE(evtPtr.evtCode);
 								if (this.isTypeRealSprite(type1))
@@ -30378,7 +31861,13 @@ window['Runtime'] = (function Runtime(__can, __path){
 								else
 								{
 									d1 = CObjInfo.OILIMITFLAGS_QUICKCOL | CObjInfo.OILIMITFLAGS_QUICKEXT | CObjInfo.OILIMITFLAGS_ONCOLLIDE;
-								}
+	                            }
+
+	                            // Change box-mode collisions?
+	                            if (this.application.hdr2Options2 & CRunApp.AH2OPT2_WINDOWSLIKEBOXCOLLISIONS) {
+	                                this.replaceBoxCollisionModes(evtPtr.evtOiList, evtPtr.evtOi, pEvpObject.oiList, pEvpObject.oi);
+	                            }
+
 								n = 3;
 								break;
 							case (-4 << 16):     // CNDL_EXTISCOLLIDING:
@@ -30404,6 +31893,12 @@ window['Runtime'] = (function Runtime(__can, __path){
 								{
 									d1 = CObjInfo.OILIMITFLAGS_QUICKCOL | CObjInfo.OILIMITFLAGS_QUICKEXT;
 								}
+
+	                            // Change box-mode collisions?
+	                            if ((this.application.hdr2Options2 & CRunApp.AH2OPT2_WINDOWSLIKEBOXCOLLISIONS) != 0) {
+	                                this.replaceBoxCollisionModes(evtPtr.evtOiList, evtPtr.evtOi, evpPtr.oiList, evpPtr.oi);
+	                            }
+
 								n = 3;
 								break;
 							case (-11 << 16):     // CNDL_EXTINPLAYFIELD:
@@ -30467,6 +31962,144 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 			this.colBuffer[colList] = -1;
 
+	        // For each loop optimization
+	        var bOptimizeForEach = false;
+	        if (this.onEachLoopConditionIndexes == null && this.onEachLoopConditionIndexesActives == null)	// do it only if not already done
+	        {
+	            this.onEachLoopConditionIndexes = new Map();
+	            this.onEachLoopConditionIndexesActives = new Map();
+	            this.allOnEachLoopsAreOptimized = true;
+	            bOptimizeForEach = true;
+
+	            // Find all On Each loop names, and test if all On Each conditions use constant names and there is no For Each of Two action
+	            for (evg = 0; evg < this.events.length && bOptimizeForEach; evg++)
+	            {
+	                evgPtr = this.events[evg];
+	                if (evgPtr == null)
+	                    continue;
+
+	                for (evt = 0; evt < evgPtr.evgNCond; evt++)
+	                {
+	                    evtPtr = evgPtr.evgEvents[evt];
+	                    if (evtPtr == null)
+	                        continue;
+
+	                    type = CEventProgram.EVTTYPE(evtPtr.evtCode);
+	                    if (type >= COI.OBJ_SPR && CEventProgram.getEventCode(evtPtr.evtCode) == (-41 << 16))	// CNDL_EXTONLOOP)
+	                    {
+	                        // Name = simple string?
+	                        var pExp = evtPtr.evtParams[0];
+	                        if (pExp.tokens.length == 2 && pExp.tokens[0].code == CExp.EXP_STRING && pExp.tokens[1].code == 0)
+	                        {
+	                            var loopname = pExp.tokens[0].string.toLowerCase();
+	                            var conditionUseCountMap = (type == COI.OBJ_SPR) ? this.onEachLoopConditionIndexesActives : this.onEachLoopConditionIndexes;
+	                            var cndUseCount = conditionUseCountMap.get(loopname);
+	                            if (cndUseCount == undefined)
+	                                cndUseCount = 1;
+								else
+	                                cndUseCount++;
+	                            conditionUseCountMap.set(loopname, cndUseCount);
+							}
+							else
+	                        {
+	                            // Can't use For Each optimization
+	                            bOptimizeForEach = false;
+	                            break;
+	                        }
+						}
+	                }
+
+	                for (n = 0; n < evgPtr.evgNAct && bOptimizeForEach; n++)
+	                {
+	                    evtPtr = evgPtr.evgEvents[n + evgPtr.evgNCond];
+	                    if (evtPtr == null)
+	                        continue;
+
+	                    type = CEventProgram.EVTTYPE(evtPtr.evtCode);
+	                    if (type >= COI.OBJ_SPR && CEventProgram.getEventCode(evtPtr.evtCode) == (77 << 16))		// ACT_EXTFOREACH2)
+	                    {
+	                        // Can't use For Each optimization
+	                        bOptimizeForEach = false;
+	                        break;
+	                    }
+	                }
+				}
+	            if (!bOptimizeForEach)
+	            {
+	                this.onEachLoopConditionIndexes = null;
+	                this.onEachLoopConditionIndexesActives = null;
+	                this.allOnEachLoopsAreOptimized = false;
+	            }
+	            else
+	            {
+	                // If the number of loop names exceeds the maximum available condition numbers, remove the ones with the lower use count
+	                //var itk;
+	                while (this.onEachLoopConditionIndexes.size > CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_MAXNUMBER)
+	                {
+	                    var minUseCount = 1000000000;
+	                    var minLoopName = null;
+	                    for (const entry of this.onEachLoopConditionIndexes.entries())
+	                    {
+	                        var useCount = entry[1];
+	                        if (useCount < minUseCount)
+	                        {
+	                            minLoopName = entry[0];
+	                            minUseCount = useCount;
+	                        }
+	                    }
+	                    if (minLoopName != null)
+	                    {
+	                        this.onEachLoopConditionIndexes.delete(minLoopName);
+	                        this.allOnEachLoopsAreOptimized = false;
+	                    }
+	                }
+
+	                // Transform counts to condition numbers in onEachLoopConditionIndexes map
+	                var cndIndex = CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_FIRST;
+	                for (const loopname of this.onEachLoopConditionIndexes.keys())
+	                {
+	                    this.onEachLoopConditionIndexes.set(loopname, cndIndex++);
+	                }
+
+	                // Same thing for active object loops
+	                // If the number of loop names exceeds the maximum available condition numbers, remove the ones with the lower use count
+	                while (this.onEachLoopConditionIndexesActives.size > CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_MAXNUMBER_ONLYACTIVEOBJECTS)
+	                {
+	                    var minUseCount = 1000000000;
+	                    var minLoopName = null;
+	                    for (const entry of this.onEachLoopConditionIndexesActives.entries())
+	                    {
+	                        var useCount = entry[1];
+	                        if (useCount < minUseCount)
+	                        {
+	                            minLoopName = entry[0];
+	                            minUseCount = useCount;
+	                        }
+	                    }
+	                    if (minLoopName != null)
+	                    {
+	                        this.onEachLoopConditionIndexesActives.delete(minLoopName);
+	                        this.allOnEachLoopsAreOptimized = false;
+	                    }
+	                }
+
+	                // Transform counts to condition numbers in onEachLoopConditionIndexesActives map
+	                cndIndex = CEventProgram.CNDIDX_EXTONLOOP_INTERNAL_FIRST;
+	                for (const loopname of this.onEachLoopConditionIndexesActives.keys())
+	                {
+	                    this.onEachLoopConditionIndexesActives.set(loopname, cndIndex++);
+	                    if (cndIndex == CEventProgram.EVENTS_EXTBASE + 1) {
+	                        // Skip first conditions of active object
+	                        cndIndex += CEventProgram.NUMBER_OF_ACTIVEOBJECT_CONDITIONS;
+	                    }
+	                }
+
+	                // Update number of conditions for active objects
+	                if (cndIndex > CEventProgram.EVENTS_EXTBASE + 1 + CEventProgram.NUMBER_OF_ACTIVEOBJECT_CONDITIONS)
+	                    this.nConditions[COI.NUMBEROF_SYSTEMTYPES + COI.OBJ_SPR] += cndIndex - (CEventProgram.EVENTS_EXTBASE + 1 + CEventProgram.NUMBER_OF_ACTIVEOBJECT_CONDITIONS);
+	            }
+	        }
+
 			// Reserve le buffer des pointeurs sur listes d'events
 			// ---------------------------------------------------
 			var aListPointers = new Array(COI.NUMBEROF_SYSTEMTYPES + oiMax + 1);
@@ -30518,6 +32151,27 @@ window['Runtime'] = (function Runtime(__can, __path){
 					type = CEventProgram.EVTTYPE(evtPtr.evtCode);
 					code = evtPtr.evtCode;
 					num = -CEventProgram.EVTNUM(code);
+
+	                // For each loop optimization
+	                // On Each condition?
+	                if (bOptimizeForEach && type >= COI.OBJ_SPR && CEventProgram.getEventCode(code) == (-41 << 16))	// CNDL_EXTONLOOP)
+	                {
+	                    // Name = simple string?
+	                    var pExp = evtPtr.evtParams[0];
+	                    if (pExp.tokens.length == 2 && pExp.tokens[0].code == CExp.EXP_STRING && pExp.tokens[1].code == 0)
+	                    {
+	                        // New On Each condition?
+	                        var loopname = pExp.tokens[0].string.toLowerCase();
+	                        var conditionIndexMap = (type == COI.OBJ_SPR) ? this.onEachLoopConditionIndexesActives : this.onEachLoopConditionIndexes;
+	                        var cndUseCount = conditionIndexMap.get(loopname);
+	                        if (cndUseCount != undefined)
+	                        {
+	                            num = cndUseCount;
+	                            code = (code & 0xFFFF) + (-num * 65536);
+	                            evtPtr.evtCode = code;
+	                        }
+		                }
+	                }
 
 					if (bOrBefore && evtPtr.evtCode != ((-42 << 16) | 0xFFFF))  // CNDL_ENDCHILDEVENT
 					{
@@ -30678,37 +32332,58 @@ window['Runtime'] = (function Runtime(__can, __path){
 								var expression = evtPtr.evtParams[0];
 								if (expression.tokens[0].code == CExp.EXP_STRING && expression.tokens[1].code == 0)
 								{
+	                                var posOnLoop = null;
+	                                var nOnLoop;
 									var pName = expression.tokens[0].string;
-									var fastLoopIndex = this.rhPtr.addFastLoop(pName);
-									for (n = 0; n < posStartLoop.length; n++)
+	                                var fastLoopIndex = this.rhPtr.addFastLoop(pName);
+	                                var nStartLoop;
+	                                for (nStartLoop = 0; nStartLoop < posStartLoop.length; nStartLoop++)
 									{
-										var pPos = posStartLoop[n];
+	                                    var pPos = posStartLoop[nStartLoop];
 										if (CServices.compareStringsIgnoreCase(pPos.name, pName))
 										{
 											if (!this.rhPtr.rh4PosOnLoop)
 												this.rhPtr.rh4PosOnLoop = new Array();
 
-											var posOnLoop = null;
-											for (n = 0; n < this.rhPtr.rh4PosOnLoop.length; n++)
-											{
-												if (CServices.compareStringsIgnoreCase(pName, this.rhPtr.rh4PosOnLoop[n].name))
-												{
-													posOnLoop = this.rhPtr.rh4PosOnLoop[n];
-													break;
-												}
-											}
-											if (!posOnLoop)
-											{
-												posOnLoop = new CPosOnLoop(pName, fastLoopIndex);
-												this.rhPtr.rh4PosOnLoop.push(posOnLoop);
-											}
-											posOnLoop.AddOnLoop(evgPtr);
-											posOnLoop.m_bOR |= bOR;
-											pPos.address.fastFastLoop = n + 1;
-											break;
+	                                        if (posOnLoop == null)
+	                                        {
+	                                            for (nOnLoop = 0; nOnLoop < this.rhPtr.rh4PosOnLoop.length; nOnLoop++)
+	                                            {
+	                                                posOnLoop = this.rhPtr.rh4PosOnLoop[nOnLoop];
+	                                                if (CServices.compareStringsIgnoreCase(pName, posOnLoop.name))
+	                                                    break;
+	                                            }
+	                                            if (nOnLoop == this.rhPtr.rh4PosOnLoop.length)
+	                                            {
+	                                                posOnLoop = new CPosOnLoop(pName, fastLoopIndex);
+	                                                this.rhPtr.rh4PosOnLoop.push(posOnLoop);
+	                                            }
+	                                            posOnLoop.AddOnLoop(evgPtr);
+	                                            posOnLoop.m_bOR |= bOR;
+	                                        }
+	                                        pPos.address.fastFastLoop = nOnLoop + 1;
 										}
 									}
-								}
+
+	                                if (posOnLoop == null)
+	                                {
+	                                    if (!this.rhPtr.rh4PosOnLoop)
+	                                        this.rhPtr.rh4PosOnLoop = new Array();
+	                                    for (nOnLoop = 0; nOnLoop < this.rhPtr.rh4PosOnLoop.length; nOnLoop++)
+	                                    {
+	                                        posOnLoop = this.rhPtr.rh4PosOnLoop[nOnLoop];
+	                                        if (CServices.compareStringsIgnoreCase(pName, posOnLoop.name))
+	                                            break;
+	                                    }
+	                                    if (nOnLoop == this.rhPtr.rh4PosOnLoop.length)
+	                                    {
+	                                        posOnLoop = new CPosOnLoop(pName, fastLoopIndex);
+	                                        this.rhPtr.rh4PosOnLoop.push(posOnLoop);
+	                                    }
+	                                    posOnLoop.AddOnLoop(evgPtr);
+	                                    posOnLoop.m_bOR |= bOR;
+	                                }
+	                            }
 								else
 								{
 									this.complexOnLoop = true;
@@ -31035,11 +32710,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				return -1;
 			}
-			if (this.qualOilPos >= this.qualToOiList[this.qualOilPtr].qoiList.length)
+			if (this.qualOilPos >= this.qualToOiListFull[this.qualOilPtr].qoiList.length)
 			{
 				return -1;
 			}
-			o = this.qualToOiList[this.qualOilPtr].qoiList[this.qualOilPos + 1];
+	        o = this.qualToOiListFull[this.qualOilPtr].qoiList[this.qualOilPos + 1];
 			this.qualOilPos += 2;
 			return (o);
 		},
@@ -31070,11 +32745,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				return -1;
 			}
-			if (this.qualOilPos2 >= this.qualToOiList[this.qualOilPtr2].qoiList.length)
+	        if (this.qualOilPos2 >= this.qualToOiListFull[this.qualOilPtr2].qoiList.length)
 			{
 				return -1;
 			}
-			o = this.qualToOiList[this.qualOilPtr2].qoiList[this.qualOilPos2 + 1];
+	        o = this.qualToOiListFull[this.qualOilPtr2].qoiList[this.qualOilPos2 + 1];
 			this.qualOilPos2 += 2;
 			return (o);
 		},
@@ -31085,9 +32760,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 			var pOinOil;
 			if (oiNum < 0)
 			{
-				if (this.qualToOiList != null)
+	            if (this.qualToOiListFull != null)
 				{
-					qoil = this.qualToOiList[oiList & 0x7FFF];
+	                qoil = this.qualToOiListFull[oiList & 0x7FFF];
 					pOinOil = 0;
 					while (pOinOil < qoil.qoiList.length)
 					{
@@ -31100,9 +32775,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 			if (oiNum2 < 0)
 			{
-				if (this.qualToOiList != null)
+	            if (this.qualToOiListFull != null)
 				{
-					qoil = this.qualToOiList[oiList2 & 0x7FFF];
+	                qoil = this.qualToOiListFull[oiList2 & 0x7FFF];
 					pOinOil = 0;
 					while (pOinOil < qoil.qoiList.length)
 					{
@@ -31136,6 +32811,99 @@ window['Runtime'] = (function Runtime(__can, __path){
 			colList.push(oiNum2);
 			colList.push(oiList2);
 		},
+
+	    replaceBoxCollisionModes: function (oiList, oiNum, oiList2, oiNum2)
+		{
+			var qoil;
+			var pOinOil;
+			if (oiNum < 0)
+			{
+	            if (this.qualToOiListFull != null)
+				{
+	                qoil = this.qualToOiListFull[oiList & 0x7FFF];
+					pOinOil = 0;
+					while (pOinOil < qoil.qoiList.length)
+					{
+	                    this.replaceBoxCollisionModes(qoil.qoiList[pOinOil + 1], qoil.qoiList[pOinOil], oiList2, oiNum2);
+						pOinOil += 2;
+					}
+				}
+				return;
+			}
+
+			if (oiNum2 < 0)
+			{
+	            if (this.qualToOiListFull != null)
+				{
+	                qoil = this.qualToOiListFull[oiList2 & 0x7FFF];
+					pOinOil = 0;
+					while (pOinOil < qoil.qoiList.length)
+					{
+	                    this.replaceBoxCollisionModes(oiList, oiNum, qoil.qoiList[pOinOil + 1], qoil.qoiList[pOinOil]);
+						pOinOil += 2;
+					}
+				}
+				return;
+			}
+
+	        var oilPtr = this.rhPtr.rhOiList[oiList];
+	        var oilPtr2 = this.rhPtr.rhOiList[oiList2];
+
+	        // Only active objects
+	        if (oilPtr.oilType == COI.OBJ_SPR && oilPtr2.oilType == COI.OBJ_SPR) {
+
+	            // Is one of them in box collision mode and the other in fine collision mode?
+	            if ((oilPtr.oilOCFlags2 & CObjectCommon.OCFLAGS2_COLBOX) != (oilPtr2.oilOCFlags2 & CObjectCommon.OCFLAGS2_COLBOX)) {
+
+	                // Yes => clear box mode flag and mark images of this object as fully opaques for collisions
+	                // But not if object have physics movements (just check the first movement)
+
+	                // Get the object that has box collision mode
+	                var oi = oiNum;
+	                if ((oilPtr2.oilOCFlags2 & CObjectCommon.OCFLAGS2_COLBOX) != 0) {
+	                    oilPtr = oilPtr2;
+	                    oi = oiNum2;
+	                }
+	                var oiPtr = this.application.OIList.getOIFromHandle(oi);
+	                var ocPtr = oiPtr.oiOC;
+	                var isPhysics = false;
+	                if ((ocPtr.ocOEFlags & CObjectCommon.OEFLAG_MOVEMENTS) != 0 && ocPtr.ocMovements != null && ocPtr.ocMovements.nMovements > 0) {
+	                    var mvPtr = (ocPtr.ocMovements.moveList[0]);
+	                    if (mvPtr.mvType == CMoveDef.MVTYPE_EXT) {
+	                        isPhysics = mvPtr.isPhysics;
+	                    }
+	                }
+	                if (!isPhysics) {
+	                    // No physics movement
+	                    // Clear box mode flag
+	                    oilPtr.oilOCFlags2 &= ~CObjectCommon.OCFLAGS2_COLBOX;
+
+	                    // Clear box mode flag in sprites that are already created
+	                    var i = oilPtr.oilObject;
+	                    while ((i & 0x80000000) == 0) {
+	                        var pHo = this.rhPtr.rhObjectList[i];
+	                        if (pHo == null)
+	                            break;
+	                        pHo.ros.rsFlags &= ~CRSpr.RSFLAG_COLBOX;
+	                        i = pHo.hoNumNext;
+	                    }
+
+	                    // Enumerate images and set their opaque_for_collisions flag
+	                    if (this.application.OIList.oiLoaded != null && this.application.OIList.oiLoaded[oi])
+	                        oiPtr.enumElements(this, null);
+	                }
+	            }
+	        }
+	    },
+
+	    // Set opaque-for-collisions image flag
+	    enumerate: function (num) {
+	        var image = this.application.imageBank.getImageFromHandle(num);
+	        if (image != null) {
+	            image.iflags |= CImage.IMAGEFLAG_OPAQUEFORCOLLISIONS;
+	        }
+	        return -1;
+	    },
 
 		make_ColList1: function (evgPtr, colList, oi1)
 		{
@@ -31344,6 +33112,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.evgInhibit = 0;
 		this.evgInhibitCpt = 0;
 	    this.evgEvents = null;
+	    this.evgLine = 0;
 	}
 	CEventGroup.create = function (app)
 	{
@@ -31354,7 +33123,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 		evg.evgNCond = app.file.readAByte();
 		evg.evgNAct = app.file.readAByte();
 		evg.evgFlags = app.file.readAShort();
-		app.file.skipBytes(2);
+		evg.evgLine = app.file.readAShort();
+		//app.file.skipBytes(2);
 		evg.evgInhibit = app.file.readAInt();
 		evg.evgInhibitCpt = app.file.readAInt();
 
@@ -31385,6 +33155,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 	CEvent.EVFLAGS_BADOBJECT = 0x80;
 	CEvent.EVFLAGS_DEFAULTMASK = CEvent.EVFLAGS_ALWAYS + CEvent.EVFLAGS_REPEAT + CEvent.EVFLAGS_DEFAULT + CEvent.EVFLAGS_DONEBEFOREFADEIN + CEvent.EVFLAGS_NOTDONEINSTART;
 	CEvent.EVFLAG2_NOT = 0x01;
+	CEvent.EVFLAG2_NOOBJECTINTERDEPENDENCE = 0x20;
+
 	function CEvent()
 	{
 	}
@@ -31481,7 +33253,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 		this.loX = 0;
 		this.loY = 0;
 		this.loParentType = 0;
-		this.loOiParentHandle = 0;
+	    this.loValue = 0;
 		this.loLayer = 0;
 		this.loType = 0;
 		this.loInstances = null;
@@ -31500,7 +33272,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			this.loX = file.readAInt();
 			this.loY = file.readAInt();
 			this.loParentType = file.readAShort();
-			this.loOiParentHandle = file.readAShort();
+			this.loValue = file.readAShort();
 			this.loLayer = file.readAShort();
 			file.skipBytes(2);
 		},
@@ -32132,7 +33904,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				this.imageUsed = this.app.imageBank.getImageFromHandle(this.poi.oiOC.ocImage);
 				this.width = this.imageUsed.width;
-				this.height = this.imageUsed.height;
+	            this.height = this.imageUsed.height;
 			}
 			else if (this.type >= 32)
 			{
@@ -33422,6 +35194,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 	CObject.HOF_FADEIN = 0x0008;
 	CObject.HOF_FADEOUT = 0x0010;
 	CObject.HOF_OWNERDRAW = 0x0020;
+	CObject.HOF_SHOOTER = 0x0040;
 	CObject.HOF_NOCOLLISION = 0x2000;
 	CObject.HOF_FLOAT = 0x4000;
 	CObject.HOF_STRING = 0x8000;
@@ -33486,10 +35259,13 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.roc.rcChanged = true;
 
 				var ifo = this.hoAdRunHeader.rhApp.imageBank.getImageInfoEx(this.roc.rcImage, this.roc.rcAngle, this.roc.rcScaleX, this.roc.rcScaleY);
-				this.hoImgWidth = ifo.width;
-				this.hoImgHeight = ifo.height;
-				this.hoImgXSpot = ifo.xSpot;
-				this.hoImgYSpot = ifo.ySpot;
+				if (ifo != null)
+				{
+				    this.hoImgWidth = ifo.width;
+				    this.hoImgHeight = ifo.height;
+				    this.hoImgXSpot = ifo.xSpot;
+				    this.hoImgYSpot = ifo.ySpot;
+				}
 			}
 		},
 		shtCreate: function (p, x, y, dir)
@@ -34150,10 +35926,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 			},
 
 			autoResize: function () {
-			    this.subApp.setMouseOffsets((this.hoAdRunHeader.rhApp.xMouseOffset + this.appSprite.x) * this.hoAdRunHeader.rhApp.scaleX,
-					(this.hoAdRunHeader.rhApp.yMouseOffset + this.appSprite.y) * this.hoAdRunHeader.rhApp.scaleY);
-			    if (this.subApp != null)
+			    if (this.subApp != null) {
+			        this.subApp.setMouseOffsets((this.hoAdRunHeader.rhApp.xMouseOffset + this.appSprite.x) * this.hoAdRunHeader.rhApp.scaleX,
+	                    (this.hoAdRunHeader.rhApp.yMouseOffset + this.appSprite.y) * this.hoAdRunHeader.rhApp.scaleY);
 			        this.subApp.resizeCanvas();
+			    }
 			}
 
 		});
@@ -35479,12 +37256,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.rsMini = 0;
 				this.bShown = true;
 				this.rsHidden = cob.cobFlags;
-				if ((cob.cobFlags & CRun.COF_FIRSTTEXT) != 0)
+				if (txt.otTexts.length > 0)
 				{
-					if (txt.otTexts.length > 0)
-					{
-						this.rsTextBuffer = txt.otTexts[0].tsText;
-					}
+					this.rsTextBuffer = txt.otTexts[0].tsText;
 				}
 				var nFont = this.rsFont;
 				if (nFont == -1)
@@ -36490,6 +38264,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 			case 6:
 				param = new PARAM_SAMPLE(app);
 				break;
+	        case 7:
+	            param = new PARAM_INT(app);     // PARAM_MUSIC
+	            break;
 			case 9:
 				param = new PARAM_CREATE(app);
 				break;
@@ -36658,6 +38435,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 		    case 69:
 		        param = new PARAM_CHILDEVENT(app);
 		        break;
+	        case 72:
+	            param = new PARAM_ZONE(app);
+	            break;
 		}
 		param.code = c;
 		app.file.seek(debut + size);
@@ -36831,8 +38611,11 @@ window['Runtime'] = (function Runtime(__can, __path){
 							var ifo;
 							var angle = pHo.roc.rcAngle;
 							var pMBase = rhPtr.GetMBase(pHo);
-							if (pMBase != null)
-								angle = pMBase.getAngle();
+	                        if (pMBase != null) {
+	                            angle = pMBase.getAngle();
+	                            if (angle == CRunMBase.ANGLE_MAGIC)
+	                                angle = pHo.roc.rcAngle;
+	                        }
 							ifo = rhPtr.rhApp.imageBank.getImageInfoEx(pHo.roc.rcImage, angle, pHo.roc.rcScaleX, pHo.roc.rcScaleY);
 							pInfo.x += ifo.xAP - ifo.xSpot;
 							pInfo.y += ifo.yAP - ifo.ySpot;
@@ -43516,6 +45299,46 @@ window['Runtime'] = (function Runtime(__can, __path){
 			}
 		},
 
+	    createOpaqueMask: function (app, image, nFlags) {
+	        var x, y;
+
+	        this.width = image.width;
+	        this.height = image.height;
+	        this.xSpot = image.xSpot;
+	        this.ySpot = image.ySpot;
+
+	        var maskWidth = Math.floor(((this.width + 15) & 0xFFFFFFF0) / 16);
+	        this.lineWidth = maskWidth;
+	        var length = maskWidth * this.height + 1;
+	        if (typeof ArrayBuffer != 'undefined')
+	            this.mask = new Uint16Array(new ArrayBuffer(length * 2));
+	        else {
+	            this.mask = new Array(length);
+	        }
+
+	        var hmax = this.height;
+	        if ((nFlags & CMask.GCMF_PLATFORM) != 0) {
+	            if (hmax > CColMask.HEIGHT_PLATFORM)
+	                hmax = CColMask.HEIGHT_PLATFORM;
+	        }
+
+	        var wxmax = maskWidth;
+	        var lastWord = 0;
+	        if ((this.width & 15) != 0) {
+	            lastWord = (0xFFFF << (16 - (this.width & 15))) & 0xFFFF;
+	            wxmax--;
+	        }
+
+	        for (y = 0; y < hmax; y++) {
+	            var maskoffset = y * maskWidth;
+	            for (x = 0; x < wxmax; x++) {
+	                this.mask[maskoffset++] = 0xFFFF;
+	            }
+	            if (lastWord != 0)
+	                this.mask[maskoffset] = lastWord;
+	        }
+	    },
+
 		rotateRect: function (prc, pHotSpot, fAngle)
 		{
 			var x, y;
@@ -45088,9 +46911,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 	        switch (this.handle) {
 	            // START_NEWEXT
 	        case 0:
-	        return new CRunHTML5();
-	        case 1:
 	        return new CRunKcCursor();
+	        case 1:
+	        return new CRunHTML5();
 	            // INCLUDE_NEWEXT
 	        }
 
@@ -46118,7 +47941,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 	{
 		this.moduleName = null;
 		this.mvtID = 0;
-		this.data = 0;
+	    this.data = 0;
+	    this.isPhysics = false;
 	}
 	CMoveDefExtension.prototype = CServices.extend(new CMoveDef(),
 		{
@@ -46131,6 +47955,18 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				this.moduleName = name;
 				this.mvtID = id;
+	            if (CServices.compareStringsIgnoreCase(this.moduleName, 'box2d8directions')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dspring')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dspaceship')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dstatic')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dracecar')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2daxial')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dplatform')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dbouncingball')
+	                || CServices.compareStringsIgnoreCase(this.moduleName, 'box2dbackground')
+	            ) {
+	                this.isPhysics = true;
+	            }
 			}
 		});
 
@@ -47064,7 +48900,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 			{
 				this.hoPtr.roc.rcMaxSpeed = this.hoPtr.roc.rcSpeed;
 				this.hoPtr.roc.rcMinSpeed = this.hoPtr.roc.rcSpeed;
-				this.MBul_ShootObject = parent;
+	            this.MBul_ShootObject = parent;
+	            if (parent != null)
+	                parent.hoFlags |= CObject.HOF_SHOOTER;
 			},
 			kill:         function (bFast)
 			{
@@ -47544,8 +49382,13 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.hoPtr.roc.rcMaxSpeed = 100;
 				this.rmOpt = mmPtr.mvOpt;
 				this.moveAtStart(mmPtr);
-				this.hoPtr.roc.rcChanged = true;
+	            this.hoPtr.roc.rcChanged = true;
+	            this.hoPtr.hoAdRunHeader.onSetMouseMovement(this.hoPtr);
 			},
+
+	        kill: function (bFast) {
+	            this.hoPtr.hoAdRunHeader.detectMouseMovement(this.hoPtr);
+	        },
 
 			move: function ()
 			{
@@ -48730,7 +50573,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 					case 4:         // MPTYPE_CROUCH:
 						if ((joyDir & 2) == 0)
 						{
-							if (hoPtr.roa != null)
+							if (this.hoPtr.roa != null)
 							{
 								if (this.hoPtr.roa.anim_Exist(CAnim.ANIMID_UNCROUCH))
 								{
@@ -48779,7 +50622,9 @@ window['Runtime'] = (function Runtime(__can, __path){
 										this.MP_XObjectUnder = pHo2.hoX;
 										this.MP_YObjectUnder = pHo2.hoY;
 										break;
-									}
+	                                }
+	                                if (this.MP_ObjectUnder == null)
+	                                    break;
 								}
 								var dx = pHo2.hoX - this.MP_XObjectUnder;
 								var dy = pHo2.hoY - this.MP_YObjectUnder;
@@ -49721,6 +51566,7 @@ window['Runtime'] = (function Runtime(__can, __path){
 			this.rmWrapping = hoPtr.hoOiList.oilWrap;
 
 			var mvPtr = null;
+	        var nOldMovementType = hoPtr.roc.rcMovementType;
 			hoPtr.roc.rcMovementType = -1;
 			if (ocPtr.ocMovements != null)
 			{
@@ -49766,6 +51612,8 @@ window['Runtime'] = (function Runtime(__can, __path){
 					this.rmMovement.init(hoPtr, mvPtr);
 				}
 			}
+	        if (nOldMovementType != hoPtr.roc.rcMovementType && nOldMovementType == CMoveDef.MVTYPE_MOUSE)
+	            hoPtr.hoAdRunHeader.detectMouseMovement();
 			if (hoPtr.roc.rcMovementType == -1)
 			{
 				hoPtr.roc.rcMovementType = 0;
@@ -49939,6 +51787,157 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 
 
+	//----------------------------------------------------------------------------------
+	//
+	// CRUNKCCURSOR - Implementation of the Fusion Cursor object
+	//
+	//----------------------------------------------------------------------------------
+	/* Copyright (c) 1996-2012 Clickteam
+	 *
+	 * This source code is part of the HTML5 exporter for Clickteam Multimedia Fusion 2.
+	 *
+	 * Permission is hereby granted to any person obtaining a legal copy
+	 * of Clickteam Multimedia Fusion 2 to use or modify this source code for
+	 * debugging, optimizing, or customizing applications created with
+	 * Clickteam Multimedia Fusion 2.
+	 * Any other use of this source code is prohibited.
+	 *
+	 * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	 * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	 * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	 * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	 * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+	 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+	 * IN THE SOFTWARE.
+	 */
+	CRunKcCursor.CND_LAST = 0;
+	CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING = 0;	// Standard arrow and small hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW = 1;	// Standard arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS = 2;	// Crosshair
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM = 3;	// Text I-beam
+	CRunKcCursor.ACT_ACTION_SETSHAPE_NO = 4;	// Slashed circle
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL = 5;	// Windows NT only: Four-pointed arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW = 6;	// Double-pointed arrow pointing northeast and southwest
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS = 7;	// Double-pointed arrow pointing north and south
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE = 8;	// Double-pointed arrow pointing northwest and southeast
+	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE = 9;	// Double-pointed arrow pointing west and east
+	CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW = 10;	// Vertical arrow
+	CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT = 11;	// Hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HELP = 12;	// Hourglass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER = 13;	// Custom image (by number)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME = 14; // Custom image (by name)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HAND = 15;	// Hand
+	CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM = 16;	// Magnifying Glass
+	CRunKcCursor.ACT_ACTION_SETSHAPE_PICK = 17;	// Color Picker
+	CRunKcCursor.ACT_ACTION_SETSHAPE_FILL = 18;	// Fill
+	CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT = 19;	// Horizontal Split
+	CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT = 20;	// Vertical Split
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY = 21;	// Drag (Copy)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE = 22;	// Drag (Move)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT = 23;	// Drag (Shortcut)
+	CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT = 24;	// Track active object
+	CRunKcCursor.EXP_LAST = 0;
+
+	function CRunKcCursor()
+	{
+		this.cursor = 'auto';
+	}
+
+	CRunKcCursor.prototype = CServices.extend(new CRunExtension(),
+		{
+			getNumberOfConditions: function ()
+			{
+				return CRunKcCursor.CND_LAST;
+			},
+
+			createRunObject: function (file, cob, version)
+			{
+				this.cursor = 'auto';
+				this.rh.rhApp.cursor = this.cursor;
+				return true;
+			},
+
+			action: function (num, act)
+			{
+				switch (num)
+				{
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING:
+						this.cursor = 'alias';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS:
+						this.cursor = 'crosshair';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM:
+						this.cursor = 'text';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_NO:
+						this.cursor = 'not-allowed';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL:
+						this.cursor = 'all-scroll';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW:
+						this.cursor = 'nesw-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS:
+						this.cursor = 'ns-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE:
+						this.cursor = 'nwse-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE:
+						this.cursor = 'ew-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW:
+						this.cursor = 'pointer';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT:
+						this.cursor = 'wait';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HELP:
+						this.cursor = 'help';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER:
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME:
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HAND:
+					    this.cursor = 'pointer';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM:
+						this.cursor = 'zoom-in';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_PICK:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_FILL:
+						this.cursor = 'auto';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT:
+						this.cursor = 'col-resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT:
+						this.cursor = 'row_resize';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY:
+						this.cursor = 'copy';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE:
+						this.cursor = 'move';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT:
+						this.cursor = 'context-menu';
+						break;
+					case CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT:
+						break;
+				}
+				this.rh.rhApp.cursor = this.cursor;
+				this.rh.showMouse();
+			}
+		});
 	//----------------------------------------------------------------------------------
 	//
 	// CRUNHTML5
@@ -50171,11 +52170,27 @@ window['Runtime'] = (function Runtime(__can, __path){
 				this.bError = false;
 				try
 				{
-					this.ret = window[func](this.parameters[0], this.parameters[1], this.parameters[2], this.parameters[3], this.parameters[4],
-						this.parameters[5], this.parameters[6], this.parameters[7], this.parameters[8], this.parameters[9], this.parameters[10]);
+					if (this.parameters.length == 0) {
+						if(func.indexOf("(") != -1 || func.indexOf(".") != -1  || func.indexOf("[") != -1)
+							this.ret = eval(func);
+						else
+							this.ret = window[func]();
+					}
+				    else if (this.parameters.length <= 11) {
+				        this.ret = window[func](this.parameters[0], this.parameters[1], this.parameters[2], this.parameters[3], this.parameters[4],
+						    this.parameters[5], this.parameters[6], this.parameters[7], this.parameters[8], this.parameters[9], this.parameters[10]);
+				    }
+				    else {
+				        this.ret = window[func](this.parameters[0], this.parameters[1], this.parameters[2], this.parameters[3], this.parameters[4],
+						    this.parameters[5], this.parameters[6], this.parameters[7], this.parameters[8], this.parameters[9], this.parameters[10],
+						    this.parameters[11], this.parameters[12], this.parameters[13], this.parameters[14], this.parameters[15], this.parameters[16],
+						    this.parameters[17], this.parameters[18], this.parameters[19], this.parameters[20], this.parameters[21], this.parameters[22]
+	                        );
+				    }
 				}
 				catch (e)
 				{
+					console.log("Error on: "+func+" and msg: "+e.message);
 					this.bError = true;
 					this.onErrorCount = this.ho.getEventCount();
 					this.ho.generateEvent(CRunHTML5.CND_JSCRIPT_ONERROR, 0);
@@ -50292,157 +52307,6 @@ window['Runtime'] = (function Runtime(__can, __path){
 
 
 
-	//----------------------------------------------------------------------------------
-	//
-	// CRUNKCCURSOR - Implementation of the Fusion Cursor object
-	//
-	//----------------------------------------------------------------------------------
-	/* Copyright (c) 1996-2012 Clickteam
-	 *
-	 * This source code is part of the HTML5 exporter for Clickteam Multimedia Fusion 2.
-	 *
-	 * Permission is hereby granted to any person obtaining a legal copy
-	 * of Clickteam Multimedia Fusion 2 to use or modify this source code for
-	 * debugging, optimizing, or customizing applications created with
-	 * Clickteam Multimedia Fusion 2.
-	 * Any other use of this source code is prohibited.
-	 *
-	 * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-	 * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-	 * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-	 * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-	 * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-	 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-	 * IN THE SOFTWARE.
-	 */
-	CRunKcCursor.CND_LAST = 0;
-	CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING = 0;	// Standard arrow and small hourglass
-	CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW = 1;	// Standard arrow
-	CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS = 2;	// Crosshair
-	CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM = 3;	// Text I-beam
-	CRunKcCursor.ACT_ACTION_SETSHAPE_NO = 4;	// Slashed circle
-	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL = 5;	// Windows NT only: Four-pointed arrow
-	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW = 6;	// Double-pointed arrow pointing northeast and southwest
-	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS = 7;	// Double-pointed arrow pointing north and south
-	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE = 8;	// Double-pointed arrow pointing northwest and southeast
-	CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE = 9;	// Double-pointed arrow pointing west and east
-	CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW = 10;	// Vertical arrow
-	CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT = 11;	// Hourglass
-	CRunKcCursor.ACT_ACTION_SETSHAPE_HELP = 12;	// Hourglass
-	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER = 13;	// Custom image (by number)
-	CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME = 14; // Custom image (by name)
-	CRunKcCursor.ACT_ACTION_SETSHAPE_HAND = 15;	// Hand
-	CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM = 16;	// Magnifying Glass
-	CRunKcCursor.ACT_ACTION_SETSHAPE_PICK = 17;	// Color Picker
-	CRunKcCursor.ACT_ACTION_SETSHAPE_FILL = 18;	// Fill
-	CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT = 19;	// Horizontal Split
-	CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT = 20;	// Vertical Split
-	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY = 21;	// Drag (Copy)
-	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE = 22;	// Drag (Move)
-	CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT = 23;	// Drag (Shortcut)
-	CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT = 24;	// Track active object
-	CRunKcCursor.EXP_LAST = 0;
-
-	function CRunKcCursor()
-	{
-		this.cursor = 'auto';
-	}
-
-	CRunKcCursor.prototype = CServices.extend(new CRunExtension(),
-		{
-			getNumberOfConditions: function ()
-			{
-				return CRunKcCursor.CND_LAST;
-			},
-
-			createRunObject: function (file, cob, version)
-			{
-				this.cursor = 'auto';
-				this.rh.rhApp.cursor = this.cursor;
-				return true;
-			},
-
-			action: function (num, act)
-			{
-				switch (num)
-				{
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_APPSTARTING:
-						this.cursor = 'alias';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_ARROW:
-						this.cursor = 'auto';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_CROSS:
-						this.cursor = 'crosshair';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_IBEAM:
-						this.cursor = 'text';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_NO:
-						this.cursor = 'not-allowed';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEALL:
-						this.cursor = 'all-scroll';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENESW:
-						this.cursor = 'nesw-resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENS:
-						this.cursor = 'ns-resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZENWSE:
-						this.cursor = 'nwse-resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_SIZEWE:
-						this.cursor = 'ew-resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_UPARROW:
-						this.cursor = 'pointer';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_WAIT:
-						this.cursor = 'wait';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_HELP:
-						this.cursor = 'help';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNUMBER:
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_IMAGE_BYNAME:
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_HAND:
-					    this.cursor = 'pointer';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_ZOOM:
-						this.cursor = 'zoom-in';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_PICK:
-						this.cursor = 'auto';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_FILL:
-						this.cursor = 'auto';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_HSPLIT:
-						this.cursor = 'col-resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_VSPLIT:
-						this.cursor = 'row_resize';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_COPY:
-						this.cursor = 'copy';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_MOVE:
-						this.cursor = 'move';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_DRAG_SHORTCUT:
-						this.cursor = 'context-menu';
-						break;
-					case CRunKcCursor.ACT_ACTION_SETSHAPE_OBJECT:
-						break;
-				}
-				this.rh.rhApp.cursor = this.cursor;
-				this.rh.showMouse();
-			}
-		});
 
 	Runtime(__can, __path); 
 })
